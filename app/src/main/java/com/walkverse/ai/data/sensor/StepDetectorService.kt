@@ -37,6 +37,16 @@ class StepDetectorService : Service(), SensorEventListener {
     private var initialStepsFromDb = 0
     private var sensorBaseline = -1f
     private var todayDateStr = ""
+    
+    // Filtering fields for step count accuracy
+    private var lastStepTime = 0L
+    private var stepBuffer = 0
+    private var isWalkingActive = false
+    private var lastRawSensorValue = -1f
+
+    private val STEP_INTERVAL_MIN = 300L // Min 300ms spacing between steps
+    private val STEP_INTERVAL_MAX = 2000L // Max 2s spacing to maintain walking active
+    private val MIN_CONSECUTIVE_STEPS = 6 // Buffer 6 steps before recording
 
     private val NOTIFICATION_ID = 5005
     private val CHANNEL_ID = "walkverse_sensor_tracking"
@@ -96,6 +106,39 @@ class StepDetectorService : Service(), SensorEventListener {
         return START_STICKY
     }
 
+    private fun registerStepEvent(currentTime: Long): Int {
+        val timeDiff = currentTime - lastStepTime
+        
+        // 1. Reject high-frequency noise (e.g. vibration, shaking)
+        if (timeDiff < STEP_INTERVAL_MIN) {
+            return 0
+        }
+        
+        var stepsToApply = 0
+        
+        // 2. Continuous walking filter
+        if (timeDiff > STEP_INTERVAL_MAX) {
+            // User stopped walking or took an isolated action (jump, bump, drop)
+            isWalkingActive = false
+            stepBuffer = 1 // Start a new verification sequence
+        } else {
+            if (isWalkingActive) {
+                // User is actively walking, count immediately
+                stepsToApply = 1
+            } else {
+                stepBuffer++
+                if (stepBuffer >= MIN_CONSECUTIVE_STEPS) {
+                    isWalkingActive = true
+                    stepsToApply = stepBuffer // Flush all buffered steps!
+                    stepBuffer = 0
+                }
+            }
+        }
+        
+        lastStepTime = currentTime
+        return stepsToApply
+    }
+
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null) return
 
@@ -107,45 +150,63 @@ class StepDetectorService : Service(), SensorEventListener {
                 todayDateStr = currentDate
                 initialStepsFromDb = 0
                 sensorBaseline = if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) event.values[0] else -1f
+                lastRawSensorValue = if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) event.values[0] else -1f
+                lastStepTime = 0L
+                stepBuffer = 0
+                isWalkingActive = false
             }
-
-            var calculatedSteps = 0
-            var stepDelta = 0
 
             if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) {
                 val sensorValue = event.values[0]
-                Log.d("StepDetectorService", "Sensor TYPE_STEP_COUNTER value: $sensorValue")
+                Log.d("StepDetectorService", "Sensor TYPE_STEP_COUNTER raw: $sensorValue")
 
-                if (sensorBaseline == -1f) {
-                    sensorBaseline = sensorValue
+                if (lastRawSensorValue == -1f) {
+                    lastRawSensorValue = sensorValue
                 }
 
                 // Handle reboot: sensor resets to 0
-                if (sensorValue < sensorBaseline) {
-                    sensorBaseline = sensorValue
+                if (sensorValue < lastRawSensorValue) {
+                    lastRawSensorValue = sensorValue
                     val record = database.stepsDao().getStepsForDate(todayDateStr)
                     initialStepsFromDb = record?.steps ?: 0
                 }
 
-                val delta = (sensorValue - sensorBaseline).toInt().coerceAtLeast(0)
-                
-                val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
-                val currentStepsInDb = currentTodayRecord?.steps ?: 0
-                calculatedSteps = initialStepsFromDb + delta
-                
-                stepDelta = (calculatedSteps - currentStepsInDb).coerceAtLeast(0)
-            } else if (event.sensor.type == Sensor.TYPE_STEP_DETECTOR) {
-                // If step counter sensor isn't available or hasn't fired yet, increment steps on detector pulse
-                if (stepCounterSensor == null) {
+                val sensorDelta = (sensorValue - lastRawSensorValue).toInt()
+                lastRawSensorValue = sensorValue
+
+                // Reject negative numbers or unrealistic high delta (e.g. vehicular speeds > 15 steps per check)
+                if (sensorDelta <= 0 || sensorDelta > 15) {
+                    return@launch
+                }
+
+                // Simulate delta events passing through our walking filter
+                val currentTime = System.currentTimeMillis()
+                var stepsToApply = 0
+                for (i in 0 until sensorDelta) {
+                    val simulatedTime = lastStepTime + 500L
+                    val currentSimTime = if (simulatedTime < currentTime) simulatedTime else currentTime
+                    stepsToApply += registerStepEvent(currentSimTime)
+                }
+
+                if (stepsToApply > 0) {
                     val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
                     val currentStepsInDb = currentTodayRecord?.steps ?: 0
-                    calculatedSteps = currentStepsInDb + 1
-                    stepDelta = 1
+                    val nextSteps = currentStepsInDb + stepsToApply
+                    updateTodayStepsInDb(nextSteps, stepsToApply)
                 }
-            }
 
-            if (stepDelta > 0) {
-                updateTodayStepsInDb(calculatedSteps, stepDelta)
+            } else if (event.sensor.type == Sensor.TYPE_STEP_DETECTOR) {
+                // If step counter sensor isn't available, rely on detector pulses passing through filter
+                if (stepCounterSensor == null) {
+                    val currentTime = System.currentTimeMillis()
+                    val stepsToApply = registerStepEvent(currentTime)
+                    if (stepsToApply > 0) {
+                        val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
+                        val currentStepsInDb = currentTodayRecord?.steps ?: 0
+                        val nextSteps = currentStepsInDb + stepsToApply
+                        updateTodayStepsInDb(nextSteps, stepsToApply)
+                    }
+                }
             }
         }
     }
