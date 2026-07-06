@@ -1,9 +1,9 @@
 package com.walkverse.ai
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
@@ -33,15 +34,21 @@ import com.walkverse.ai.ui.theme.WalkVerseTheme
 import java.time.LocalDate
 import java.time.LocalTime
 import java.util.concurrent.TimeUnit
-import androidx.health.connect.client.permission.HealthPermission
-import androidx.health.connect.client.records.DistanceRecord
-import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var viewModel: WalkViewModel
     private lateinit var healthConnectManager: HealthConnectManager
+
+    // Permissions launcher for sensor tracking and notifications
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val activityRecognitionGranted = permissions[android.Manifest.permission.ACTIVITY_RECOGNITION] ?: false
+        if (activityRecognitionGranted) {
+            startStepCounterService()
+        }
+    }
 
     // Permission launcher for Health Connect
     private val requestPermissionActivityContract by lazy {
@@ -65,6 +72,18 @@ class MainActivity : ComponentActivity() {
 
         // Schedule periodic background step synchronization using WorkManager (runs every 15 minutes)
         schedulePeriodicStepSync()
+
+        // Request ACTIVITY_RECOGNITION and POST_NOTIFICATIONS permissions on startup
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            requestPermissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.ACTIVITY_RECOGNITION,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                )
+            )
+        } else {
+            startStepCounterService()
+        }
 
         setContent {
             val themeName by viewModel.selectedTheme.collectAsState()
@@ -130,6 +149,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun startStepCounterService() {
+        val serviceIntent = Intent(this, com.walkverse.ai.data.sensor.StepDetectorService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
         }
     }
 

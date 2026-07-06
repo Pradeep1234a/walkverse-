@@ -142,12 +142,14 @@ fun OnboardingScreen(navController: NavController, viewModel: WalkViewModel) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    placeholder = { Text("Walker") },
+                    placeholder = { Text("Walker", color = colors.textMuted) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = colors.textPrimary,
                         unfocusedTextColor = colors.textPrimary,
                         focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = colors.border
+                        unfocusedBorderColor = colors.border,
+                        focusedPlaceholderColor = colors.textMuted,
+                        unfocusedPlaceholderColor = colors.textMuted
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -159,12 +161,14 @@ fun OnboardingScreen(navController: NavController, viewModel: WalkViewModel) {
                 OutlinedTextField(
                     value = stepGoal,
                     onValueChange = { stepGoal = it.filter { char -> char.isDigit() } },
-                    placeholder = { Text("8000") },
+                    placeholder = { Text("8000", color = colors.textMuted) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = colors.textPrimary,
                         unfocusedTextColor = colors.textPrimary,
                         focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = colors.border
+                        unfocusedBorderColor = colors.border,
+                        focusedPlaceholderColor = colors.textMuted,
+                        unfocusedPlaceholderColor = colors.textMuted
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1510,7 +1514,9 @@ fun SettingsScreen(viewModel: WalkViewModel) {
                         focusedTextColor = colors.textPrimary,
                         unfocusedTextColor = colors.textPrimary,
                         focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = colors.border
+                        unfocusedBorderColor = colors.border,
+                        focusedPlaceholderColor = colors.textMuted,
+                        unfocusedPlaceholderColor = colors.textMuted
                     )
                 )
                 Spacer(modifier = Modifier.width(12.dp))
