@@ -186,51 +186,32 @@ fun WalkVerseTopBar(
     viewModel: WalkViewModel
 ) {
     val colors = LocalShadcnColors.current
-    val userName by viewModel.userName.collectAsState()
-    
-    // Determine screen type (Primary BottomNav vs secondary details)
     val isPrimaryScreen = bottomNavItems.any { it.route == currentRoute }
 
-    // Dynamic greeting based on time of day
-    val greeting = when (LocalTime.now().hour) {
-        in 0..11 -> "Good morning"
-        in 12..17 -> "Good afternoon"
-        else -> "Good evening"
+    val titleText = when (currentRoute) {
+        Screen.Home.route -> "Home"
+        Screen.Challenges.route -> "Challenges"
+        Screen.Garden.route -> "Garden"
+        Screen.Pet.route -> "Virtual Pet"
+        Screen.Profile.route -> "Profile"
+        Screen.Statistics.route -> "Statistics"
+        Screen.History.route -> "History"
+        Screen.Achievements.route -> "Badges"
+        Screen.Story.route -> "Story Mode"
+        Screen.Settings.route -> "Settings"
+        Screen.About.route -> "About"
+        Screen.Help.route -> "Help FAQs"
+        else -> "WalkVerse"
     }
 
     TopAppBar(
         title = {
-            if (isPrimaryScreen) {
-                Column {
-                    Text(
-                        text = "WalkVerse AI",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.textPrimary
-                    )
-                    Text(
-                        text = "$greeting, $userName",
-                        fontSize = 11.sp,
-                        color = colors.textMuted
-                    )
-                }
-            } else {
-                Text(
-                    text = when (currentRoute) {
-                        Screen.Statistics.route -> "Statistics"
-                        Screen.History.route -> "Walking Log"
-                        Screen.Achievements.route -> "Trophy Room"
-                        Screen.Story.route -> "Story Mode"
-                        Screen.Settings.route -> "Settings"
-                        Screen.About.route -> "About"
-                        Screen.Help.route -> "FAQs"
-                        else -> "WalkVerse"
-                    },
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-            }
+            Text(
+                text = titleText,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary
+            )
         },
         navigationIcon = {
             if (!isPrimaryScreen) {
