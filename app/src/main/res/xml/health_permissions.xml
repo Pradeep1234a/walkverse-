@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<health-permissions xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission android:name="android.permission.health.READ_STEPS" />
+    <permission android:name="android.permission.health.WRITE_STEPS" />
+    <permission android:name="android.permission.health.READ_DISTANCE" />
+    <permission android:name="android.permission.health.WRITE_DISTANCE" />
+    <permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
+    <permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED" />
+</health-permissions>
