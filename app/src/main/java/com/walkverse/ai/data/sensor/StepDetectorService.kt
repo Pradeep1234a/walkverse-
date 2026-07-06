@@ -17,17 +17,21 @@ import com.walkverse.ai.data.local.db.DailyStepsEntity
 import com.walkverse.ai.data.local.pref.WalkPreferences
 import com.walkverse.ai.domain.model.ChallengeType
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import kotlin.random.Random
+import kotlin.math.sqrt
 
 class StepDetectorService : Service(), SensorEventListener {
 
     private lateinit var sensorManager: SensorManager
     private var stepCounterSensor: Sensor? = null
     private var stepDetectorSensor: Sensor? = null
+    private var accelerometer: Sensor? = null
+    private var gyroscope: Sensor? = null
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -37,7 +41,15 @@ class StepDetectorService : Service(), SensorEventListener {
     private var initialStepsFromDb = 0
     private var sensorBaseline = -1f
     private var todayDateStr = ""
-    
+
+    // Sliding windows for motion data (50 samples at ~20Hz = 2.5 seconds)
+    private val accelWindow = mutableListOf<Float>()
+    private val gyroWindow = mutableListOf<Float>()
+    private val WINDOW_SIZE = 50
+
+    // Adaptive user calibration parameter (user's average walking variance)
+    private var adaptiveWalkVarianceThreshold = 0.5f
+
     // Filtering fields for step count accuracy
     private var lastStepTime = 0L
     private var stepBuffer = 0
@@ -51,6 +63,15 @@ class StepDetectorService : Service(), SensorEventListener {
     private val NOTIFICATION_ID = 5005
     private val CHANNEL_ID = "walkverse_sensor_tracking"
 
+    companion object {
+        // Expose live states to the ViewModel
+        private val _currentActivity = MutableStateFlow("Stationary")
+        val currentActivity = _currentActivity.asStateFlow()
+
+        private val _currentConfidence = MutableStateFlow(1.0f)
+        val currentConfidence = _currentConfidence.asStateFlow()
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.d("StepDetectorService", "Service onCreate")
@@ -62,6 +83,8 @@ class StepDetectorService : Service(), SensorEventListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         stepCounterSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
         stepDetectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
 
         // Load today's starting steps from DB
         serviceScope.launch {
@@ -73,17 +96,15 @@ class StepDetectorService : Service(), SensorEventListener {
         // Register sensors
         stepCounterSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
-            Log.d("StepDetectorService", "Registered TYPE_STEP_COUNTER")
         }
-        
-        // Register step detector as backup/immediate updates
         stepDetectorSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
-            Log.d("StepDetectorService", "Registered TYPE_STEP_DETECTOR")
         }
-
-        if (stepCounterSensor == null && stepDetectorSensor == null) {
-            Log.e("StepDetectorService", "No step sensors available on this device!")
+        accelerometer?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+        }
+        gyroscope?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
         }
     }
 
@@ -104,6 +125,212 @@ class StepDetectorService : Service(), SensorEventListener {
         }
 
         return START_STICKY
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (event == null) return
+
+        when (event.sensor.type) {
+            Sensor.TYPE_ACCELEROMETER -> {
+                val ax = event.values[0]
+                val ay = event.values[1]
+                val az = event.values[2]
+                val mag = sqrt(ax * ax + ay * ay + az * az)
+                synchronized(accelWindow) {
+                    accelWindow.add(mag)
+                    if (accelWindow.size > WINDOW_SIZE) accelWindow.removeAt(0)
+                }
+                classifyMotionActivity()
+            }
+            Sensor.TYPE_GYROSCOPE -> {
+                val rx = event.values[0]
+                val ry = event.values[1]
+                val rz = event.values[2]
+                val mag = sqrt(rx * rx + ry * ry + rz * rz)
+                synchronized(gyroWindow) {
+                    gyroWindow.add(mag)
+                    if (gyroWindow.size > WINDOW_SIZE) gyroWindow.removeAt(0)
+                }
+            }
+            Sensor.TYPE_STEP_COUNTER -> {
+                processStepCounterEvent(event.values[0])
+            }
+            Sensor.TYPE_STEP_DETECTOR -> {
+                processStepDetectorEvent()
+            }
+        }
+    }
+
+    private fun classifyMotionActivity() {
+        val accelList = synchronized(accelWindow) { accelWindow.toList() }
+        val gyroList = synchronized(gyroWindow) { gyroWindow.toList() }
+
+        if (accelList.size < WINDOW_SIZE || gyroList.size < WINDOW_SIZE) {
+            _currentActivity.value = "Calibrating..."
+            _currentConfidence.value = 0.5f
+            return
+        }
+
+        // Calculate Acceleration Stats
+        val accelMean = accelList.average().toFloat()
+        var accelVar = 0.0f
+        for (v in accelList) {
+            accelVar += (v - accelMean) * (v - accelMean)
+        }
+        accelVar /= WINDOW_SIZE
+
+        // Calculate Gyroscope Stats (swaying rotations)
+        val gyroMean = gyroList.average().toFloat()
+
+        // Zero-crossing frequency of acceleration magnitude to estimate step cadence
+        var crossings = 0
+        var lastSign = false
+        for (i in 0 until accelList.size) {
+            val diff = accelList[i] - accelMean
+            val sign = diff > 0
+            if (i > 0 && sign != lastSign && Math.abs(diff) > 0.15f) {
+                crossings++
+            }
+            lastSign = sign
+        }
+        
+        // 50 samples at ~20Hz (approx 2.5 seconds). Frequency = (crossings / 2) / 2.5s = crossings / 10
+        val estimatedFrequencyHz = crossings / 10.0f
+
+        var activity = "Stationary"
+        var confidence = 0.95f
+
+        when {
+            // 1. Stationary: Very low acceleration variance and low rotation
+            accelVar < 0.08f && gyroMean < 0.05f -> {
+                activity = "Stationary"
+                confidence = (1.0f - (accelVar * 4f + gyroMean * 3f)).coerceIn(0.8f, 1.0f)
+            }
+
+            // 2. Shaking / Vibrating: Chaotic high variance, high-frequency crossings
+            accelVar > 18.0f || (accelVar > 10.0f && estimatedFrequencyHz > 4.0f) -> {
+                activity = "Shaking/Vibrating"
+                confidence = (accelVar / 35f).coerceIn(0.7f, 0.99f)
+            }
+
+            // 3. Vehicular Travel: Linear acceleration bumps, but crucially lacks the physical
+            // rotation/sway signature of a walking human body (which rotationally sways hips/arms at 0.2 - 2.0 rad/s)
+            accelVar > 0.08f && accelVar < 0.65f && gyroMean < 0.16f -> {
+                activity = "In Vehicle"
+                confidence = (0.8f + (0.15f * (0.16f - gyroMean))).coerceIn(0.6f, 0.95f)
+            }
+
+            // 4. Running: High rhythmic variance and fast walking cadence
+            accelVar >= 6.5f && estimatedFrequencyHz >= 2.4f && estimatedFrequencyHz <= 4.8f -> {
+                activity = "Running"
+                confidence = (0.8f + (estimatedFrequencyHz / 12f)).coerceIn(0.7f, 0.98f)
+            }
+
+            // 5. Walking: Moderate rhythmic variance, human cadence
+            accelVar >= (adaptiveWalkVarianceThreshold * 0.5f) && accelVar < 6.5f && 
+            estimatedFrequencyHz >= 0.8f && estimatedFrequencyHz <= 2.4f -> {
+                activity = "Walking"
+                confidence = (0.75f + (0.2f * (1f - Math.abs(estimatedFrequencyHz - 1.6f)))).coerceIn(0.6f, 0.98f)
+                
+                // Continuous calibration: adapt walk threshold slowly based on user's active variance
+                adaptiveWalkVarianceThreshold = (0.95f * adaptiveWalkVarianceThreshold) + (0.05f * accelVar)
+            }
+
+            // Default
+            else -> {
+                activity = "Stationary"
+                confidence = 0.8f
+            }
+        }
+
+        _currentActivity.value = activity
+        _currentConfidence.value = confidence
+    }
+
+    private fun processStepCounterEvent(sensorValue: Float) {
+        serviceScope.launch {
+            val currentDate = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+            checkDayTransition(currentDate, sensorValue)
+
+            if (lastRawSensorValue == -1f) {
+                lastRawSensorValue = sensorValue
+            }
+
+            // Handle reboot: raw resets to 0
+            if (sensorValue < lastRawSensorValue) {
+                lastRawSensorValue = sensorValue
+                val record = database.stepsDao().getStepsForDate(todayDateStr)
+                initialStepsFromDb = record?.steps ?: 0
+            }
+
+            val sensorDelta = (sensorValue - lastRawSensorValue).toInt()
+            lastRawSensorValue = sensorValue
+
+            // Ignore negative delta or sudden impossible spikes (e.g. driving/shaking > 15 steps per check interval)
+            if (sensorDelta <= 0 || sensorDelta > 15) {
+                return@launch
+            }
+
+            // Step Counter Validation: Only validate steps if classified as Walking or Running!
+            val activity = _currentActivity.value
+            if (activity != "Walking" && activity != "Running" && activity != "Calibrating...") {
+                Log.d("StepDetectorService", "Discarded $sensorDelta steps due to activity: $activity")
+                return@launch
+            }
+
+            // Pass steps through walking cadence filter
+            val currentTime = System.currentTimeMillis()
+            var stepsToApply = 0
+            for (i in 0 until sensorDelta) {
+                val simulatedTime = lastStepTime + 500L
+                val currentSimTime = if (simulatedTime < currentTime) simulatedTime else currentTime
+                stepsToApply += registerStepEvent(currentSimTime)
+            }
+
+            if (stepsToApply > 0) {
+                val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
+                val currentStepsInDb = currentTodayRecord?.steps ?: 0
+                val nextSteps = currentStepsInDb + stepsToApply
+                updateTodayStepsInDb(nextSteps, stepsToApply)
+            }
+        }
+    }
+
+    private fun processStepDetectorEvent() {
+        // If step counter sensor isn't available, rely on detector pulses passed through filter
+        if (stepCounterSensor == null) {
+            serviceScope.launch {
+                val currentDate = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                checkDayTransition(currentDate, -1f)
+
+                // Only count if walking/running
+                val activity = _currentActivity.value
+                if (activity != "Walking" && activity != "Running" && activity != "Calibrating...") {
+                    return@launch
+                }
+
+                val currentTime = System.currentTimeMillis()
+                val stepsToApply = registerStepEvent(currentTime)
+                if (stepsToApply > 0) {
+                    val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
+                    val currentStepsInDb = currentTodayRecord?.steps ?: 0
+                    val nextSteps = currentStepsInDb + stepsToApply
+                    updateTodayStepsInDb(nextSteps, stepsToApply)
+                }
+            }
+        }
+    }
+
+    private fun checkDayTransition(currentDate: String, sensorValue: Float) {
+        if (currentDate != todayDateStr) {
+            todayDateStr = currentDate
+            initialStepsFromDb = 0
+            sensorBaseline = if (sensorValue != -1f) sensorValue else -1f
+            lastRawSensorValue = if (sensorValue != -1f) sensorValue else -1f
+            lastStepTime = 0L
+            stepBuffer = 0
+            isWalkingActive = false
+        }
     }
 
     private fun registerStepEvent(currentTime: Long): Int {
@@ -139,78 +366,6 @@ class StepDetectorService : Service(), SensorEventListener {
         return stepsToApply
     }
 
-    override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null) return
-
-        serviceScope.launch {
-            val currentDate = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-            
-            // Check if day transitioned, if so reset baselines
-            if (currentDate != todayDateStr) {
-                todayDateStr = currentDate
-                initialStepsFromDb = 0
-                sensorBaseline = if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) event.values[0] else -1f
-                lastRawSensorValue = if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) event.values[0] else -1f
-                lastStepTime = 0L
-                stepBuffer = 0
-                isWalkingActive = false
-            }
-
-            if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) {
-                val sensorValue = event.values[0]
-                Log.d("StepDetectorService", "Sensor TYPE_STEP_COUNTER raw: $sensorValue")
-
-                if (lastRawSensorValue == -1f) {
-                    lastRawSensorValue = sensorValue
-                }
-
-                // Handle reboot: sensor resets to 0
-                if (sensorValue < lastRawSensorValue) {
-                    lastRawSensorValue = sensorValue
-                    val record = database.stepsDao().getStepsForDate(todayDateStr)
-                    initialStepsFromDb = record?.steps ?: 0
-                }
-
-                val sensorDelta = (sensorValue - lastRawSensorValue).toInt()
-                lastRawSensorValue = sensorValue
-
-                // Reject negative numbers or unrealistic high delta (e.g. vehicular speeds > 15 steps per check)
-                if (sensorDelta <= 0 || sensorDelta > 15) {
-                    return@launch
-                }
-
-                // Simulate delta events passing through our walking filter
-                val currentTime = System.currentTimeMillis()
-                var stepsToApply = 0
-                for (i in 0 until sensorDelta) {
-                    val simulatedTime = lastStepTime + 500L
-                    val currentSimTime = if (simulatedTime < currentTime) simulatedTime else currentTime
-                    stepsToApply += registerStepEvent(currentSimTime)
-                }
-
-                if (stepsToApply > 0) {
-                    val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
-                    val currentStepsInDb = currentTodayRecord?.steps ?: 0
-                    val nextSteps = currentStepsInDb + stepsToApply
-                    updateTodayStepsInDb(nextSteps, stepsToApply)
-                }
-
-            } else if (event.sensor.type == Sensor.TYPE_STEP_DETECTOR) {
-                // If step counter sensor isn't available, rely on detector pulses passing through filter
-                if (stepCounterSensor == null) {
-                    val currentTime = System.currentTimeMillis()
-                    val stepsToApply = registerStepEvent(currentTime)
-                    if (stepsToApply > 0) {
-                        val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
-                        val currentStepsInDb = currentTodayRecord?.steps ?: 0
-                        val nextSteps = currentStepsInDb + stepsToApply
-                        updateTodayStepsInDb(nextSteps, stepsToApply)
-                    }
-                }
-            }
-        }
-    }
-
     private suspend fun updateTodayStepsInDb(steps: Int, stepDelta: Int) {
         val goal = preferences.dailyGoalFlow.first()
         val distanceKm = steps * 0.00076
@@ -228,7 +383,7 @@ class StepDetectorService : Service(), SensorEventListener {
         database.stepsDao().insertSteps(updatedRecord)
         updateNotification(steps)
 
-        // Process games/rewards milestones in real time as the user walks!
+        // Process games/rewards milestones in real time as the user walks
         processStepMilestones(stepDelta, steps, goal)
     }
 

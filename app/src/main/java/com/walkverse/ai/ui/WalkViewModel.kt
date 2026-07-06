@@ -36,6 +36,10 @@ class WalkViewModel(application: Application) : AndroidViewModel(application) {
     val userLevel = preferences.userLevelFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), 1)
     val gems = preferences.gemsFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), 20)
 
+    // Real-time Activity Recognition and Confidence Score
+    val currentActivity = com.walkverse.ai.data.sensor.StepDetectorService.currentActivity
+    val currentConfidence = com.walkverse.ai.data.sensor.StepDetectorService.currentConfidence
+
     // UI state flows from Room Database
     val stepsHistory = repository.getStepsFlow().stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyList())
     val challenges = repository.getChallengesFlow().stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyList())

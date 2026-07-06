@@ -302,21 +302,83 @@ fun HomeScreen(navController: NavController, viewModel: WalkViewModel) {
             }
         }
 
-        // Circular Step Ring
+        // Circular Step Ring & Live Activity Recognition Status
         item {
+            val activeActivity by viewModel.currentActivity.collectAsState()
+            val activeConfidence by viewModel.currentConfidence.collectAsState()
+
             ShadcnCard(modifier = Modifier.fillMaxWidth()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(240.dp),
-                    contentAlignment = Alignment.Center
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    ShadcnProgressRing(
-                        progress = progress,
-                        steps = currentSteps,
-                        goal = goal,
-                        modifier = Modifier.size(200.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ShadcnProgressRing(
+                            progress = progress,
+                            steps = currentSteps,
+                            goal = goal,
+                            modifier = Modifier.size(190.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    // Dynamic Activity Status Badge
+                    val activityIcon = when (activeActivity) {
+                        "Walking" -> Icons.Default.DirectionsWalk
+                        "Running" -> Icons.Default.DirectionsRun
+                        "Stationary" -> Icons.Default.Pause
+                        "In Vehicle" -> Icons.Default.DirectionsCar
+                        "Shaking/Vibrating" -> Icons.Default.Warning
+                        else -> Icons.Default.Refresh
+                    }
+                    
+                    val activityColor = when (activeActivity) {
+                        "Walking" -> colors.success
+                        "Running" -> colors.primary
+                        "Stationary" -> colors.textMuted
+                        "In Vehicle" -> Color(0xFFF59E0B) // Amber
+                        "Shaking/Vibrating" -> Color(0xFFEF4444) // Red
+                        else -> colors.textMuted
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .background(activityColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                            .border(1.dp, activityColor.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = activityIcon,
+                            contentDescription = activeActivity,
+                            tint = activityColor,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = when (activeActivity) {
+                                "In Vehicle" -> "Vehicle Detected • Paused"
+                                "Shaking/Vibrating" -> "Vibration Filtered"
+                                else -> activeActivity
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            text = "${String.format("%.0f%%", activeConfidence * 100f)} conf",
+                            fontSize = 11.sp,
+                            color = colors.textMuted
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         }
