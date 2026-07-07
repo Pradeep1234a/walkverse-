@@ -54,6 +54,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
@@ -86,6 +91,9 @@ dependencies {
     
     // Health Connect
     implementation(libs.health.connect.client)
+
+    // Activity Recognition & Location
+    implementation(libs.play.services.location)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

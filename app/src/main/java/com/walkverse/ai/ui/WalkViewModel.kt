@@ -176,27 +176,7 @@ class WalkViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Manual step simulation for testing/offline usage
-    fun simulateSteps(count: Int) {
-        viewModelScope.launch {
-            val today = todayRecord.value ?: return@launch
-            val newSteps = today.steps + count
-            val updatedRecord = today.copy(
-                steps = newSteps,
-                distanceKm = newSteps * 0.00076,
-                caloriesKcal = newSteps * 0.042,
-                durationMinutes = newSteps / 95
-            )
-            repository.insertSteps(updatedRecord)
-            processStepsWalked(count, newSteps)
 
-            // Write back to Health Connect as well if enabled
-            if (healthConnectSyncEnabled.value && healthConnectManager.isAvailable && healthConnectManager.hasAllPermissions()) {
-                val now = Instant.now()
-                healthConnectManager.writeSteps(count, now.minusSeconds(60), now)
-            }
-        }
-    }
 
     // Distribute rewards, progress challenges, achievements, pet and plants
     private suspend fun processStepsWalked(deltaSteps: Int, totalStepsToday: Int) {

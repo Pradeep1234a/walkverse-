@@ -468,31 +468,7 @@ fun HomeScreen(navController: NavController, viewModel: WalkViewModel) {
             }
         }
 
-        // Developer Tool: Step Simulator
-        item {
-            ShadcnCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Developer Simulation Tools", fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Since this is an offline build, you can simulate step count increments to test the game loops, pet, garden, and challenge logic.", fontSize = 12.sp, color = colors.textMuted)
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ShadcnButton(
-                        text = "+500 Steps",
-                        onClick = { viewModel.simulateSteps(500) },
-                        outline = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ShadcnButton(
-                        text = "+2500 Steps",
-                        onClick = { viewModel.simulateSteps(2500) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
+
         
         item {
             Spacer(modifier = Modifier.height(64.dp)) // Padding for bottom nav

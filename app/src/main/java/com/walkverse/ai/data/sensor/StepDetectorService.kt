@@ -39,7 +39,6 @@ class StepDetectorService : Service(), SensorEventListener {
     private lateinit var preferences: WalkPreferences
 
     private var initialStepsFromDb = 0
-    private var sensorBaseline = -1f
     private var todayDateStr = ""
 
     // Sliding windows for motion data (50 samples at ~20Hz = 2.5 seconds)
@@ -54,6 +53,8 @@ class StepDetectorService : Service(), SensorEventListener {
     private var lastStepTime = 0L
     private var stepBuffer = 0
     private var isWalkingActive = false
+    
+    // Reboot-resilient step counter calibration baseline
     private var lastRawSensorValue = -1f
 
     private val STEP_INTERVAL_MIN = 300L // Min 300ms spacing between steps
@@ -64,12 +65,24 @@ class StepDetectorService : Service(), SensorEventListener {
     private val CHANNEL_ID = "walkverse_sensor_tracking"
 
     companion object {
-        // Expose live states to the ViewModel
+        // Expose live fused activity states to the UI
         private val _currentActivity = MutableStateFlow("Stationary")
         val currentActivity = _currentActivity.asStateFlow()
 
         private val _currentConfidence = MutableStateFlow(1.0f)
         val currentConfidence = _currentConfidence.asStateFlow()
+
+        // Inputs from Google Activity Recognition Client
+        private val _apiActivity = MutableStateFlow("Stationary")
+        private val _apiConfidence = MutableStateFlow(1.0f)
+
+        // Track when walking motion was last detected locally (within 5 seconds)
+        private var lastWalkMotionTime = 0L
+
+        fun updateActivityRecognitionState(activity: String, confidence: Float) {
+            _apiActivity.value = activity
+            _apiConfidence.value = confidence
+        }
     }
 
     override fun onCreate() {
@@ -93,6 +106,10 @@ class StepDetectorService : Service(), SensorEventListener {
             updateNotification(initialStepsFromDb)
         }
 
+        // Restore raw sensor baseline from local SharedPreferences
+        val prefs = getSharedPreferences("walkverse_sensor_prefs", Context.MODE_PRIVATE)
+        lastRawSensorValue = prefs.getFloat("last_raw_sensor_value", -1f)
+
         // Register sensors
         stepCounterSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
@@ -106,6 +123,9 @@ class StepDetectorService : Service(), SensorEventListener {
         gyroscope?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
         }
+
+        // Request Activity Recognition updates from Google Play Services
+        requestActivityRecognitionUpdates()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -197,40 +217,40 @@ class StepDetectorService : Service(), SensorEventListener {
         // 50 samples at ~20Hz (approx 2.5 seconds). Frequency = (crossings / 2) / 2.5s = crossings / 10
         val estimatedFrequencyHz = crossings / 10.0f
 
-        var activity = "Stationary"
-        var confidence = 0.95f
+        var localActivity = "Stationary"
+        var localConfidence = 0.95f
 
         when {
             // 1. Stationary: Very low acceleration variance and low rotation
             accelVar < 0.08f && gyroMean < 0.05f -> {
-                activity = "Stationary"
-                confidence = (1.0f - (accelVar * 4f + gyroMean * 3f)).coerceIn(0.8f, 1.0f)
+                localActivity = "Stationary"
+                localConfidence = (1.0f - (accelVar * 4f + gyroMean * 3f)).coerceIn(0.8f, 1.0f)
             }
 
             // 2. Shaking / Vibrating: Chaotic high variance, high-frequency crossings
             accelVar > 18.0f || (accelVar > 10.0f && estimatedFrequencyHz > 4.0f) -> {
-                activity = "Shaking/Vibrating"
-                confidence = (accelVar / 35f).coerceIn(0.7f, 0.99f)
+                localActivity = "Shaking/Vibrating"
+                localConfidence = (accelVar / 35f).coerceIn(0.7f, 0.99f)
             }
 
             // 3. Vehicular Travel: Linear acceleration bumps, but crucially lacks the physical
             // rotation/sway signature of a walking human body (which rotationally sways hips/arms at 0.2 - 2.0 rad/s)
             accelVar > 0.08f && accelVar < 0.65f && gyroMean < 0.16f -> {
-                activity = "In Vehicle"
-                confidence = (0.8f + (0.15f * (0.16f - gyroMean))).coerceIn(0.6f, 0.95f)
+                localActivity = "In Vehicle"
+                localConfidence = (0.8f + (0.15f * (0.16f - gyroMean))).coerceIn(0.6f, 0.95f)
             }
 
             // 4. Running: High rhythmic variance and fast walking cadence
             accelVar >= 6.5f && estimatedFrequencyHz >= 2.4f && estimatedFrequencyHz <= 4.8f -> {
-                activity = "Running"
-                confidence = (0.8f + (estimatedFrequencyHz / 12f)).coerceIn(0.7f, 0.98f)
+                localActivity = "Running"
+                localConfidence = (0.8f + (estimatedFrequencyHz / 12f)).coerceIn(0.7f, 0.98f)
             }
 
             // 5. Walking: Moderate rhythmic variance, human cadence
             accelVar >= (adaptiveWalkVarianceThreshold * 0.5f) && accelVar < 6.5f && 
             estimatedFrequencyHz >= 0.8f && estimatedFrequencyHz <= 2.4f -> {
-                activity = "Walking"
-                confidence = (0.75f + (0.2f * (1f - Math.abs(estimatedFrequencyHz - 1.6f)))).coerceIn(0.6f, 0.98f)
+                localActivity = "Walking"
+                localConfidence = (0.75f + (0.2f * (1f - Math.abs(estimatedFrequencyHz - 1.6f)))).coerceIn(0.6f, 0.98f)
                 
                 // Continuous calibration: adapt walk threshold slowly based on user's active variance
                 adaptiveWalkVarianceThreshold = (0.95f * adaptiveWalkVarianceThreshold) + (0.05f * accelVar)
@@ -238,13 +258,41 @@ class StepDetectorService : Service(), SensorEventListener {
 
             // Default
             else -> {
-                activity = "Stationary"
-                confidence = 0.8f
+                localActivity = "Stationary"
+                localConfidence = 0.8f
             }
         }
 
-        _currentActivity.value = activity
-        _currentConfidence.value = confidence
+        // FUSE LOCAL SENSOR ANALYSIS WITH THE GOOGLE PLAY SERVICES ACTIVITY RECOGNITION API
+        val apiAct = _apiActivity.value
+        val apiConf = _apiConfidence.value
+
+        var fusedActivity = localActivity
+        var fusedConfidence = localConfidence
+
+        if (apiAct == "In Vehicle" && apiConf > 0.65f) {
+            // Highly confident vehicle detection overrides local walking classification
+            fusedActivity = "In Vehicle"
+            fusedConfidence = apiConf
+        } else if (apiAct == "Walking" && apiConf > 0.7f && localActivity == "Calibrating...") {
+            // API detects walking while local is still collecting samples
+            fusedActivity = "Walking"
+            fusedConfidence = apiConf
+        } else if (localActivity == "Shaking/Vibrating") {
+            // Direct physics shaking override
+            fusedActivity = "Shaking/Vibrating"
+            fusedConfidence = localConfidence
+        } else if (apiAct == "Stationary" && apiConf > 0.85f && localActivity != "Walking" && localActivity != "Running") {
+            fusedActivity = "Stationary"
+            fusedConfidence = apiConf
+        }
+
+        _currentActivity.value = fusedActivity
+        _currentConfidence.value = fusedConfidence
+
+        if (fusedActivity == "Walking" || fusedActivity == "Running") {
+            lastWalkMotionTime = System.currentTimeMillis()
+        }
     }
 
     private fun processStepCounterEvent(sensorValue: Float) {
@@ -254,31 +302,43 @@ class StepDetectorService : Service(), SensorEventListener {
 
             if (lastRawSensorValue == -1f) {
                 lastRawSensorValue = sensorValue
+                saveRawSensorValue(sensorValue)
             }
 
             // Handle reboot: raw resets to 0
             if (sensorValue < lastRawSensorValue) {
                 lastRawSensorValue = sensorValue
+                saveRawSensorValue(sensorValue)
                 val record = database.stepsDao().getStepsForDate(todayDateStr)
                 initialStepsFromDb = record?.steps ?: 0
             }
 
             val sensorDelta = (sensorValue - lastRawSensorValue).toInt()
+            
+            if (sensorDelta <= 0) return@launch
+
+            // CRITICAL: Consume raw counter delta immediately to prevent double counting on updates
             lastRawSensorValue = sensorValue
+            saveRawSensorValue(sensorValue)
 
-            // Ignore negative delta or sudden impossible spikes (e.g. driving/shaking > 15 steps per check interval)
-            if (sensorDelta <= 0 || sensorDelta > 15) {
+            // Reject sudden impossible spikes (e.g. driving/shaking > 15 steps per check interval)
+            if (sensorDelta > 15) {
+                Log.d("StepDetectorService", "Rejected raw spike delta: $sensorDelta")
                 return@launch
             }
 
-            // Step Counter Validation: Only validate steps if classified as Walking or Running!
+            // Step Counter Validation: Only validate steps if classified as Walking/Running
+            // or if walking motion occurred in the last 5 seconds (to prevent start lag).
             val activity = _currentActivity.value
-            if (activity != "Walking" && activity != "Running" && activity != "Calibrating...") {
-                Log.d("StepDetectorService", "Discarded $sensorDelta steps due to activity: $activity")
+            val timeSinceLastWalkMotion = System.currentTimeMillis() - lastWalkMotionTime
+            val isValidGaitState = activity == "Walking" || activity == "Running" || activity == "Calibrating..." || timeSinceLastWalkMotion < 5000L
+
+            if (!isValidGaitState) {
+                Log.d("StepDetectorService", "Discarded raw delta: $sensorDelta (fusedActivity: $activity)")
                 return@launch
             }
 
-            // Pass steps through walking cadence filter
+            // Pass steps through walking cadence interval filter
             val currentTime = System.currentTimeMillis()
             var stepsToApply = 0
             for (i in 0 until sensorDelta) {
@@ -305,7 +365,10 @@ class StepDetectorService : Service(), SensorEventListener {
 
                 // Only count if walking/running
                 val activity = _currentActivity.value
-                if (activity != "Walking" && activity != "Running" && activity != "Calibrating...") {
+                val timeSinceLastWalkMotion = System.currentTimeMillis() - lastWalkMotionTime
+                val isValidGaitState = activity == "Walking" || activity == "Running" || activity == "Calibrating..." || timeSinceLastWalkMotion < 5000L
+
+                if (!isValidGaitState) {
                     return@launch
                 }
 
@@ -325,8 +388,12 @@ class StepDetectorService : Service(), SensorEventListener {
         if (currentDate != todayDateStr) {
             todayDateStr = currentDate
             initialStepsFromDb = 0
-            sensorBaseline = if (sensorValue != -1f) sensorValue else -1f
-            lastRawSensorValue = if (sensorValue != -1f) sensorValue else -1f
+            
+            if (sensorValue != -1f) {
+                lastRawSensorValue = sensorValue
+                saveRawSensorValue(sensorValue)
+            }
+            
             lastStepTime = 0L
             stepBuffer = 0
             isWalkingActive = false
@@ -366,6 +433,47 @@ class StepDetectorService : Service(), SensorEventListener {
         return stepsToApply
     }
 
+    private fun saveRawSensorValue(value: Float) {
+        val prefs = getSharedPreferences("walkverse_sensor_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putFloat("last_raw_sensor_value", value).apply()
+    }
+
+    private fun requestActivityRecognitionUpdates() {
+        try {
+            val client = com.google.android.gms.location.ActivityRecognition.getClient(this)
+            val intent = Intent(this, ActivityRecognitionReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                this,
+                1001,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            client.requestActivityUpdates(3000L, pendingIntent)
+            Log.d("StepDetectorService", "Activity Recognition updates requested.")
+        } catch (e: SecurityException) {
+            Log.e("StepDetectorService", "Missing Activity Recognition permission: ${e.message}")
+        } catch (e: Exception) {
+            Log.e("StepDetectorService", "Error initiating Activity Recognition updates: ${e.message}")
+        }
+    }
+
+    private fun removeActivityRecognitionUpdates() {
+        try {
+            val client = com.google.android.gms.location.ActivityRecognition.getClient(this)
+            val intent = Intent(this, ActivityRecognitionReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                this,
+                1001,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            client.removeActivityUpdates(pendingIntent)
+            Log.d("StepDetectorService", "Activity Recognition updates removed.")
+        } catch (e: Exception) {
+            Log.e("StepDetectorService", "Error terminating Activity Recognition updates: ${e.message}")
+        }
+    }
+
     private suspend fun updateTodayStepsInDb(steps: Int, stepDelta: Int) {
         val goal = preferences.dailyGoalFlow.first()
         val distanceKm = steps * 0.00076
@@ -383,7 +491,7 @@ class StepDetectorService : Service(), SensorEventListener {
         database.stepsDao().insertSteps(updatedRecord)
         updateNotification(steps)
 
-        // Process games/rewards milestones in real time as the user walks
+        // Process story, garden, challenges, pet milestones in real time
         processStepMilestones(stepDelta, steps, goal)
     }
 
@@ -565,6 +673,7 @@ class StepDetectorService : Service(), SensorEventListener {
         super.onDestroy()
         Log.d("StepDetectorService", "Service onDestroy")
         sensorManager.unregisterListener(this)
+        removeActivityRecognitionUpdates()
         serviceScope.cancel()
     }
 

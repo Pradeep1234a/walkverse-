@@ -37,6 +37,12 @@
             android:exported="false"
             android:foregroundServiceType="health" />
         
+        <!-- Activity Recognition Receiver -->
+        <receiver
+            android:name=".data.sensor.ActivityRecognitionReceiver"
+            android:enabled="true"
+            android:exported="false" />
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
