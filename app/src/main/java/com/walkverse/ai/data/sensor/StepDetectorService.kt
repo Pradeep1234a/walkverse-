@@ -41,25 +41,22 @@ class StepDetectorService : Service(), SensorEventListener {
     private var initialStepsFromDb = 0
     private var todayDateStr = ""
 
-    // Sliding windows for motion data (50 samples at ~20Hz = 2.5 seconds)
+    // Low-frequency sliding windows for motion validation (30 samples at ~5Hz = 6 seconds)
     private val accelWindow = mutableListOf<Float>()
     private val gyroWindow = mutableListOf<Float>()
-    private val WINDOW_SIZE = 50
+    private val WINDOW_SIZE = 30
 
     // Adaptive user calibration parameter (user's average walking variance)
     private var adaptiveWalkVarianceThreshold = 0.5f
-
-    // Filtering fields for step count accuracy
-    private var lastStepTime = 0L
-    private var stepBuffer = 0
-    private var isWalkingActive = false
     
     // Reboot-resilient step counter calibration baseline
     private var lastRawSensorValue = -1f
 
-    private val STEP_INTERVAL_MIN = 300L // Min 300ms spacing between steps
-    private val STEP_INTERVAL_MAX = 2000L // Max 2s spacing to maintain walking active
-    private val MIN_CONSECUTIVE_STEPS = 6 // Buffer 6 steps before recording
+    // Track when walking motion was last validated
+    private var lastWalkMotionTime = 0L
+
+    private var lastStepTime = 0L
+    private var isWalkingActive = false
 
     private val NOTIFICATION_ID = 5005
     private val CHANNEL_ID = "walkverse_sensor_tracking"
@@ -75,9 +72,6 @@ class StepDetectorService : Service(), SensorEventListener {
         // Inputs from Google Activity Recognition Client
         private val _apiActivity = MutableStateFlow("Stationary")
         private val _apiConfidence = MutableStateFlow(1.0f)
-
-        // Track when walking motion was last detected locally (within 5 seconds)
-        private var lastWalkMotionTime = 0L
 
         fun updateActivityRecognitionState(activity: String, confidence: Float) {
             _apiActivity.value = activity
@@ -110,18 +104,22 @@ class StepDetectorService : Service(), SensorEventListener {
         val prefs = getSharedPreferences("walkverse_sensor_prefs", Context.MODE_PRIVATE)
         lastRawSensorValue = prefs.getFloat("last_raw_sensor_value", -1f)
 
-        // Register sensors
+        // Register hardware step sensors
         stepCounterSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+            Log.d("StepDetectorService", "Authoritative TYPE_STEP_COUNTER registered.")
         }
         stepDetectorSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+            Log.d("StepDetectorService", "Authoritative TYPE_STEP_DETECTOR registered.")
         }
+        
+        // Register Accelerometer/Gyroscope at low-power NORMAL rate strictly for gate validation
         accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
         gyroscope?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
 
         // Request Activity Recognition updates from Google Play Services
@@ -160,7 +158,7 @@ class StepDetectorService : Service(), SensorEventListener {
                     accelWindow.add(mag)
                     if (accelWindow.size > WINDOW_SIZE) accelWindow.removeAt(0)
                 }
-                classifyMotionActivity()
+                validateMotionActivity()
             }
             Sensor.TYPE_GYROSCOPE -> {
                 val rx = event.values[0]
@@ -173,15 +171,19 @@ class StepDetectorService : Service(), SensorEventListener {
                 }
             }
             Sensor.TYPE_STEP_COUNTER -> {
-                processStepCounterEvent(event.values[0])
+                processAuthoritativeStepCounter(event.values[0])
             }
             Sensor.TYPE_STEP_DETECTOR -> {
-                processStepDetectorEvent()
+                processFallbackStepDetector()
             }
         }
     }
 
-    private fun classifyMotionActivity() {
+    /**
+     * Low-power motion validation logic. Updates currentActivity and currentConfidence
+     * strictly to serve as a validation gate for the hardware sensors.
+     */
+    private fun validateMotionActivity() {
         val accelList = synchronized(accelWindow) { accelWindow.toList() }
         val gyroList = synchronized(gyroWindow) { gyroWindow.toList() }
 
@@ -214,8 +216,8 @@ class StepDetectorService : Service(), SensorEventListener {
             lastSign = sign
         }
         
-        // 50 samples at ~20Hz (approx 2.5 seconds). Frequency = (crossings / 2) / 2.5s = crossings / 10
-        val estimatedFrequencyHz = crossings / 10.0f
+        // 30 samples at ~5Hz (approx 6 seconds). Cadence frequency = crossings / 12
+        val estimatedFrequencyHz = crossings / 12.0f
 
         var localActivity = "Stationary"
         var localConfidence = 0.95f
@@ -228,29 +230,28 @@ class StepDetectorService : Service(), SensorEventListener {
             }
 
             // 2. Shaking / Vibrating: Chaotic high variance, high-frequency crossings
-            accelVar > 18.0f || (accelVar > 10.0f && estimatedFrequencyHz > 4.0f) -> {
+            accelVar > 15.0f || (accelVar > 8.0f && estimatedFrequencyHz > 3.8f) -> {
                 localActivity = "Shaking/Vibrating"
-                localConfidence = (accelVar / 35f).coerceIn(0.7f, 0.99f)
+                localConfidence = (accelVar / 30f).coerceIn(0.7f, 0.99f)
             }
 
-            // 3. Vehicular Travel: Linear acceleration bumps, but crucially lacks the physical
-            // rotation/sway signature of a walking human body (which rotationally sways hips/arms at 0.2 - 2.0 rad/s)
+            // 3. Vehicular Travel: Linear acceleration bumps, but lacks human gait arm-sway
             accelVar > 0.08f && accelVar < 0.65f && gyroMean < 0.16f -> {
                 localActivity = "In Vehicle"
                 localConfidence = (0.8f + (0.15f * (0.16f - gyroMean))).coerceIn(0.6f, 0.95f)
             }
 
             // 4. Running: High rhythmic variance and fast walking cadence
-            accelVar >= 6.5f && estimatedFrequencyHz >= 2.4f && estimatedFrequencyHz <= 4.8f -> {
+            accelVar >= 6.0f && estimatedFrequencyHz >= 2.2f && estimatedFrequencyHz <= 4.8f -> {
                 localActivity = "Running"
                 localConfidence = (0.8f + (estimatedFrequencyHz / 12f)).coerceIn(0.7f, 0.98f)
             }
 
             // 5. Walking: Moderate rhythmic variance, human cadence
-            accelVar >= (adaptiveWalkVarianceThreshold * 0.5f) && accelVar < 6.5f && 
-            estimatedFrequencyHz >= 0.8f && estimatedFrequencyHz <= 2.4f -> {
+            accelVar >= (adaptiveWalkVarianceThreshold * 0.5f) && accelVar < 6.0f && 
+            estimatedFrequencyHz >= 0.8f && estimatedFrequencyHz <= 2.2f -> {
                 localActivity = "Walking"
-                localConfidence = (0.75f + (0.2f * (1f - Math.abs(estimatedFrequencyHz - 1.6f)))).coerceIn(0.6f, 0.98f)
+                localConfidence = (0.75f + (0.2f * (1f - Math.abs(estimatedFrequencyHz - 1.5f)))).coerceIn(0.6f, 0.98f)
                 
                 // Continuous calibration: adapt walk threshold slowly based on user's active variance
                 adaptiveWalkVarianceThreshold = (0.95f * adaptiveWalkVarianceThreshold) + (0.05f * accelVar)
@@ -295,7 +296,11 @@ class StepDetectorService : Service(), SensorEventListener {
         }
     }
 
-    private fun processStepCounterEvent(sensorValue: Float) {
+    /**
+     * Authoritative step counter algorithm. The hardware counter is the single source of truth.
+     * We consume raw steps, validate them against the motion activity gate, and save them.
+     */
+    private fun processAuthoritativeStepCounter(sensorValue: Float) {
         serviceScope.launch {
             val currentDate = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
             checkDayTransition(currentDate, sensorValue)
@@ -317,69 +322,67 @@ class StepDetectorService : Service(), SensorEventListener {
             
             if (sensorDelta <= 0) return@launch
 
-            // CRITICAL: Consume raw counter delta immediately to prevent double counting on updates
+            // Authoritative consumption: consume raw delta immediately to prevent duplication
             lastRawSensorValue = sensorValue
             saveRawSensorValue(sensorValue)
 
-            // Reject sudden impossible spikes (e.g. driving/shaking > 15 steps per check interval)
-            if (sensorDelta > 15) {
-                Log.d("StepDetectorService", "Rejected raw spike delta: $sensorDelta")
+            // Reject impossible spikes (e.g. driving/shaking > 25 steps per check interval)
+            if (sensorDelta > 25) {
+                Log.d("StepDetectorService", "Rejected hardware spike delta: $sensorDelta")
                 return@launch
             }
 
-            // Step Counter Validation: Only validate steps if classified as Walking/Running
-            // or if walking motion occurred in the last 5 seconds (to prevent start lag).
+            // Authoritative Gate Validation:
+            // Reject step deltas if user is In Vehicle, Stationary, Shaking/Vibrating,
+            // unless walking motion occurred within the last 5 seconds (to prevent start lag).
             val activity = _currentActivity.value
             val timeSinceLastWalkMotion = System.currentTimeMillis() - lastWalkMotionTime
-            val isValidGaitState = activity == "Walking" || activity == "Running" || activity == "Calibrating..." || timeSinceLastWalkMotion < 5000L
+            val isGaitValid = activity == "Walking" || activity == "Running" || activity == "Calibrating..." || timeSinceLastWalkMotion < 5000L
 
-            if (!isValidGaitState) {
-                Log.d("StepDetectorService", "Discarded raw delta: $sensorDelta (fusedActivity: $activity)")
+            if (!isGaitValid) {
+                Log.d("StepDetectorService", "Hardware steps discarded by validation layer: $sensorDelta (fusedActivity: $activity)")
                 return@launch
             }
 
-            // Pass steps through walking cadence interval filter
-            val currentTime = System.currentTimeMillis()
-            var stepsToApply = 0
-            for (i in 0 until sensorDelta) {
-                val simulatedTime = lastStepTime + 500L
-                val currentSimTime = if (simulatedTime < currentTime) simulatedTime else currentTime
-                stepsToApply += registerStepEvent(currentSimTime)
-            }
-
-            if (stepsToApply > 0) {
-                val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
-                val currentStepsInDb = currentTodayRecord?.steps ?: 0
-                val nextSteps = currentStepsInDb + stepsToApply
-                updateTodayStepsInDb(nextSteps, stepsToApply)
-            }
+            // Hardware steps are authoritative: add sensorDelta directly to today's database steps!
+            val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
+            val currentStepsInDb = currentTodayRecord?.steps ?: 0
+            val nextSteps = currentStepsInDb + sensorDelta
+            updateTodayStepsInDb(nextSteps, sensorDelta)
         }
     }
 
-    private fun processStepDetectorEvent() {
-        // If step counter sensor isn't available, rely on detector pulses passed through filter
+    /**
+     * Fallback step detector algorithm. ONLY utilized on devices where TYPE_STEP_COUNTER is missing.
+     */
+    private fun processFallbackStepDetector() {
         if (stepCounterSensor == null) {
             serviceScope.launch {
                 val currentDate = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
                 checkDayTransition(currentDate, -1f)
 
-                // Only count if walking/running
+                // Gate validation check
                 val activity = _currentActivity.value
                 val timeSinceLastWalkMotion = System.currentTimeMillis() - lastWalkMotionTime
-                val isValidGaitState = activity == "Walking" || activity == "Running" || activity == "Calibrating..." || timeSinceLastWalkMotion < 5000L
+                val isGaitValid = activity == "Walking" || activity == "Running" || activity == "Calibrating..." || timeSinceLastWalkMotion < 5000L
 
-                if (!isValidGaitState) {
+                if (!isGaitValid) {
                     return@launch
                 }
 
+                // Minimum step frequency interval (300ms)
                 val currentTime = System.currentTimeMillis()
-                val stepsToApply = registerStepEvent(currentTime)
-                if (stepsToApply > 0) {
-                    val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
-                    val currentStepsInDb = currentTodayRecord?.steps ?: 0
-                    val nextSteps = currentStepsInDb + stepsToApply
-                    updateTodayStepsInDb(nextSteps, stepsToApply)
+                if (currentTime - lastStepTime < 300L) {
+                    return@launch
                 }
+
+                // Apply fallback step detector count
+                lastStepTime = currentTime
+                
+                val currentTodayRecord = database.stepsDao().getStepsForDate(todayDateStr)
+                val currentStepsInDb = currentTodayRecord?.steps ?: 0
+                val nextSteps = currentStepsInDb + 1
+                updateTodayStepsInDb(nextSteps, 1)
             }
         }
     }
@@ -395,42 +398,8 @@ class StepDetectorService : Service(), SensorEventListener {
             }
             
             lastStepTime = 0L
-            stepBuffer = 0
             isWalkingActive = false
         }
-    }
-
-    private fun registerStepEvent(currentTime: Long): Int {
-        val timeDiff = currentTime - lastStepTime
-        
-        // 1. Reject high-frequency noise (e.g. vibration, shaking)
-        if (timeDiff < STEP_INTERVAL_MIN) {
-            return 0
-        }
-        
-        var stepsToApply = 0
-        
-        // 2. Continuous walking filter
-        if (timeDiff > STEP_INTERVAL_MAX) {
-            // User stopped walking or took an isolated action (jump, bump, drop)
-            isWalkingActive = false
-            stepBuffer = 1 // Start a new verification sequence
-        } else {
-            if (isWalkingActive) {
-                // User is actively walking, count immediately
-                stepsToApply = 1
-            } else {
-                stepBuffer++
-                if (stepBuffer >= MIN_CONSECUTIVE_STEPS) {
-                    isWalkingActive = true
-                    stepsToApply = stepBuffer // Flush all buffered steps!
-                    stepBuffer = 0
-                }
-            }
-        }
-        
-        lastStepTime = currentTime
-        return stepsToApply
     }
 
     private fun saveRawSensorValue(value: Float) {
@@ -491,7 +460,7 @@ class StepDetectorService : Service(), SensorEventListener {
         database.stepsDao().insertSteps(updatedRecord)
         updateNotification(steps)
 
-        // Process story, garden, challenges, pet milestones in real time
+        // Process game milestones in real time
         processStepMilestones(stepDelta, steps, goal)
     }
 
