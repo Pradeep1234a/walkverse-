@@ -40,7 +40,7 @@ val LocalShadcnColors = staticCompositionLocalOf {
     )
 }
 
-// Custom Theme Palettes
+// Balanced Custom Theme Palettes using neutral foundations and accent highlights
 object WalkVerseThemePalettes {
     // 1. ZINC (Minimalist Slate/White)
     val ZincDark = ShadcnColors(
@@ -73,85 +73,85 @@ object WalkVerseThemePalettes {
     // 2. ROSE (Energetic Warm Cherry)
     val RoseDark = ShadcnColors(
         primary = Color(0xFFF43F5E),
-        background = Color(0xFF0C0A09),
-        surface = Color(0xFF1C1917),
-        border = Color(0xFF2D2A27),
-        textPrimary = Color(0xFFF5F5F4),
-        textMuted = Color(0xFFA8A29E),
+        background = Color(0xFF09090B),
+        surface = Color(0xFF18181B),
+        border = Color(0xFF27272A),
+        textPrimary = Color(0xFFF4F4F5),
+        textMuted = Color(0xFFA1A1AA),
         accent = Color(0xFFF43F5E),
         success = Color(0xFF10B981),
         warning = Color(0xFFF59E0B),
-        cardGradStart = Color(0xFF2E1018),
-        cardGradEnd = Color(0xFF1C1917)
+        cardGradStart = Color(0xFF2D1016),
+        cardGradEnd = Color(0xFF18181B)
     )
     val RoseLight = ShadcnColors(
         primary = Color(0xFFE11D48),
-        background = Color(0xFFFFF1F2),
-        surface = Color(0xFFFFE4E6),
-        border = Color(0xFFFDA4AF),
-        textPrimary = Color(0xFF4C0519),
-        textMuted = Color(0xFF9F1239),
+        background = Color(0xFFFFFFFF),
+        surface = Color(0xFFF4F4F5),
+        border = Color(0xFFE4E4E7),
+        textPrimary = Color(0xFF09090B),
+        textMuted = Color(0xFF71717A),
         accent = Color(0xFFE11D48),
         success = Color(0xFF10B981),
         warning = Color(0xFFF59E0B),
-        cardGradStart = Color(0xFFFFE4E6),
-        cardGradEnd = Color(0xFFFECDD3)
+        cardGradStart = Color(0xFFFFF1F2),
+        cardGradEnd = Color(0xFFF4F4F5)
     )
 
     // 3. EMERALD (Nature & Growth)
     val EmeraldDark = ShadcnColors(
         primary = Color(0xFF10B981),
-        background = Color(0xFF022C22),
-        surface = Color(0xFF064E3B),
-        border = Color(0xFF047857),
-        textPrimary = Color(0xFFECFDF5),
-        textMuted = Color(0xFFA7F3D0),
-        accent = Color(0xFF34D399),
+        background = Color(0xFF09090B),
+        surface = Color(0xFF18181B),
+        border = Color(0xFF27272A),
+        textPrimary = Color(0xFFF4F4F5),
+        textMuted = Color(0xFFA1A1AA),
+        accent = Color(0xFF10B981),
         success = Color(0xFF10B981),
         warning = Color(0xFFF59E0B),
-        cardGradStart = Color(0xFF064E3B),
-        cardGradEnd = Color(0xFF022C22)
+        cardGradStart = Color(0xFF063327),
+        cardGradEnd = Color(0xFF18181B)
     )
     val EmeraldLight = ShadcnColors(
         primary = Color(0xFF059669),
-        background = Color(0xFFF0FDF4),
-        surface = Color(0xFFDCFCE7),
-        border = Color(0xFFA7F3D0),
-        textPrimary = Color(0xFF064E3B),
-        textMuted = Color(0xFF047857),
+        background = Color(0xFFFFFFFF),
+        surface = Color(0xFFF4F4F5),
+        border = Color(0xFFE4E4E7),
+        textPrimary = Color(0xFF09090B),
+        textMuted = Color(0xFF71717A),
         accent = Color(0xFF059669),
         success = Color(0xFF10B981),
         warning = Color(0xFFF59E0B),
-        cardGradStart = Color(0xFFDCFCE7),
-        cardGradEnd = Color(0xFFBBF7D0)
+        cardGradStart = Color(0xFFF0FDF4),
+        cardGradEnd = Color(0xFFF4F4F5)
     )
 
     // 4. ORANGE (Sunset Motivation)
     val OrangeDark = ShadcnColors(
         primary = Color(0xFFF97316),
-        background = Color(0xFF0C0A09),
-        surface = Color(0xFF1C1917),
-        border = Color(0xFF2D2A27),
-        textPrimary = Color(0xFFF5F5F4),
-        textMuted = Color(0xFFA8A29E),
+        background = Color(0xFF09090B),
+        surface = Color(0xFF18181B),
+        border = Color(0xFF27272A),
+        textPrimary = Color(0xFFF4F4F5),
+        textMuted = Color(0xFFA1A1AA),
         accent = Color(0xFFF97316),
         success = Color(0xFF10B981),
         warning = Color(0xFFF59E0B),
-        cardGradStart = Color(0xFF2C1609),
-        cardGradEnd = Color(0xFF1C1917)
+        cardGradStart = Color(0xFF331705),
+        cardGradEnd = Color(0xFF18181B)
     )
     val OrangeLight = ShadcnColors(
         primary = Color(0xFFEA580C),
-        background = Color(0xFFFFF7ED),
-        surface = Color(0xFFFFEDD5),
-        border = Color(0xFFFED7AA),
-        textPrimary = Color(0xFF431407),
-        textMuted = Color(0xFF9A3412),
+        background = Color(0xFFFFFFFF),
+        surface = Color(0xFFF4F4F5),
+        border = Color(0xFFE4E4E7),
+        textPrimary = Color(0xFF09090B),
+        textMuted = Color(0xFF71717A),
         accent = Color(0xFFEA580C),
         success = Color(0xFF10B981),
         warning = Color(0xFFF59E0B),
-        cardGradStart = Color(0xFFFFEDD5),
-        cardGradEnd = Color(0xFFFFDBB5)
+        cardGradStart = Color(0xFFFFF7ED),
+        cardGradEnd = Color(0xFFF4F4F5)
     )
 }
 

@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -105,7 +106,7 @@ fun ShadcnButton(
             enabled = enabled,
             colors = ButtonDefaults.buttonColors(
                 containerColor = colors.primary,
-                contentColor = if (colors.primary == Color.White) Color.Black else Color.White
+                contentColor = if (colors.primary.luminance() > 0.5f) Color(0xFF09090B) else Color.White
             ),
             shape = RoundedCornerShape(8.dp),
             modifier = modifier

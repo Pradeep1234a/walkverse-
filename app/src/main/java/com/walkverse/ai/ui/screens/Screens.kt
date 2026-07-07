@@ -515,19 +515,9 @@ fun ChallengesScreen(viewModel: WalkViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Space header to establish visual balance
         item {
-            Text(
-                text = "Daily & Weekly Challenges",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
-            Text(
-                text = "Complete walking tasks to earn gems and experience points.",
-                fontSize = 14.sp,
-                color = colors.textMuted
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
 
         items(list) { challenge ->
@@ -645,19 +635,11 @@ fun GardenScreen(viewModel: WalkViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "Walk Garden",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Text(
-                    text = "Seeds cost 15 gems. They grow as you walk!",
-                    fontSize = 13.sp,
-                    color = colors.textMuted
-                )
-            }
+            Text(
+                text = "Seeds cost 15 gems. They grow as you walk!",
+                fontSize = 13.sp,
+                color = colors.textMuted
+            )
             ShadcnBadge(
                 text = "💎 $gemsCount",
                 containerColor = colors.surface,
@@ -835,19 +817,11 @@ fun PetScreen(viewModel: WalkViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "Virtual Pet",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Text(
-                    text = "Keep your pet fed and happy using gems.",
-                    fontSize = 13.sp,
-                    color = colors.textMuted
-                )
-            }
+            Text(
+                text = "Keep your pet fed and happy using gems.",
+                fontSize = 13.sp,
+                color = colors.textMuted
+            )
             ShadcnBadge(
                 text = "💎 $gemsCount",
                 containerColor = colors.surface,
@@ -994,18 +968,7 @@ fun StatisticsScreen(viewModel: WalkViewModel) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text(
-                text = "Walking Statistics",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
-            Text(
-                text = "Detailed review of your walking performance.",
-                fontSize = 14.sp,
-                color = colors.textMuted
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
 
         item {
@@ -1184,18 +1147,7 @@ fun StoryModeScreen(viewModel: WalkViewModel) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text(
-                text = "Story Adventures",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
-            Text(
-                text = "Advance through rich narratives by accumulating walking steps.",
-                fontSize = 14.sp,
-                color = colors.textMuted
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
 
         items(chapters) { chapter ->
@@ -1289,18 +1241,7 @@ fun HistoryScreen(viewModel: WalkViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text(
-                text = "Walking Log",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
-            Text(
-                text = "Review your step records and metrics for previous days.",
-                fontSize = 14.sp,
-                color = colors.textMuted
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
 
         if (history.isEmpty()) {
@@ -1389,12 +1330,7 @@ fun ProfileScreen(navController: NavController, viewModel: WalkViewModel) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "User Profile",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = colors.textPrimary
-        )
+        Spacer(modifier = Modifier.height(4.dp))
 
         // Profile Card
         ShadcnCard(modifier = Modifier.fillMaxWidth()) {
@@ -1596,7 +1532,7 @@ fun SettingsScreen(viewModel: WalkViewModel) {
 
         // Themes Selector Setting
         ShadcnCard(modifier = Modifier.fillMaxWidth()) {
-            Text("App Theme Theme", fontWeight = FontWeight.Bold, color = colors.textPrimary)
+            Text("App Theme", fontWeight = FontWeight.Bold, color = colors.textPrimary)
             Spacer(modifier = Modifier.height(8.dp))
             Text("Select color schemes for premium custom styling.", fontSize = 12.sp, color = colors.textMuted)
             Spacer(modifier = Modifier.height(16.dp))
@@ -1682,12 +1618,7 @@ fun AboutScreen() {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "About WalkVerse AI",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = colors.textPrimary
-        )
+        Spacer(modifier = Modifier.height(4.dp))
 
         ShadcnCard(modifier = Modifier.fillMaxWidth()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -1743,12 +1674,7 @@ fun HelpScreen() {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Help & FAQs",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = colors.textPrimary
-        )
+        Spacer(modifier = Modifier.height(4.dp))
 
         val faqs = listOf(
             Pair(
