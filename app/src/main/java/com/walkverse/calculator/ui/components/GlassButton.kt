@@ -1,16 +1,11 @@
 package com.walkverse.calculator.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,16 +16,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.walkverse.calculator.ui.theme.GlassTheme
+import com.walkverse.calculator.ui.theme.SuperellipseShape
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
 
 enum class GlassButtonType {
     NUMBER,
@@ -58,49 +57,52 @@ fun GlassButton(
         label = "ButtonScale"
     )
 
-    // Layout shape: Pill-shaped for "0", otherwise perfect Circle
-    val shape = if (isWide) RoundedCornerShape(100.dp) else CircleShape
+    // Mathematically precise Superellipse Shape (n = 4.8)
+    val superellipse = SuperellipseShape(exponent = 4.8f)
 
-    // Base background colors mimicking physical glass refraction
+    // 8-second continuous reflection animation loop
+    val infiniteTransition = rememberInfiniteTransition(label = "SpecularReflection")
+    val reflectionProgress by infiniteTransition.animateFloat(
+        initialValue = -1.2f,
+        targetValue = 2.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(8000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "ReflectionProgress"
+    )
+
+    // Base transparency settings: strictly whitelisted percentages
     val baseColor = when (type) {
         GlassButtonType.NUMBER -> {
-            if (isPressed) GlassTheme.GlassHover else GlassTheme.NumberKeyGlass
+            if (isPressed) Color.White.copy(alpha = 0.12f) else GlassTheme.NumberKeyGlass
         }
         GlassButtonType.FUNCTION -> {
-            if (isPressed) GlassTheme.GlassHover else GlassTheme.FunctionKeyGlass
+            if (isPressed) Color.White.copy(alpha = 0.18f) else GlassTheme.FunctionKeyGlass
         }
         GlassButtonType.OPERATOR -> {
             if (isActiveOperator) {
-                Color.White // Apple active state inverts color to white background
+                Color.White.copy(alpha = 0.90f) // Active operator: bright face
             } else if (isPressed) {
-                GlassTheme.OperatorKeyGlass.copy(alpha = 0.85f)
+                Color(0xFF0A84FF).copy(alpha = 0.25f)
             } else {
-                GlassTheme.OperatorKeyGlass
+                GlassTheme.OperatorKeyGlass // 15% opacity blue glass
             }
         }
         GlassButtonType.EQUALS -> {
-            if (isPressed) GlassTheme.OperatorKeyGlass.copy(alpha = 0.9f) else GlassTheme.OperatorKeyGlass.copy(alpha = 0.8f)
+            if (isPressed) Color(0xFF0A84FF).copy(alpha = 0.28f) else Color(0xFF0A84FF).copy(alpha = 0.20f)
         }
     }
 
-    // Border highlights
-    val borderColors = if (isActiveOperator) {
-        listOf(GlassTheme.OperatorGlow, GlassTheme.OperatorGlow.copy(alpha = 0.5f))
-    } else {
-        listOf(Color.White.copy(alpha = 0.38f), Color.White.copy(alpha = 0.05f))
-    }
-
-    // Typography styling
-    val textFontWeight = if (type == GlassButtonType.NUMBER) FontWeight.Normal else FontWeight.Medium
-    val textFontSize = if (text.length > 2) 20.sp else 28.sp
-    
     val textColor = when (type) {
         GlassButtonType.OPERATOR -> {
-            if (isActiveOperator) Color(0xFFFF9F0A) else GlassTheme.OperatorText
+            if (isActiveOperator) Color(0xFF0A84FF) else Color.White
         }
-        GlassButtonType.FUNCTION -> GlassTheme.FunctionText
         else -> Color.White
     }
+
+    val textFontSize = if (text.length > 2) 20.sp else 28.sp
+    val textFontWeight = if (type == GlassButtonType.NUMBER) FontWeight.Normal else FontWeight.Medium
 
     Box(
         modifier = modifier
@@ -111,16 +113,16 @@ fun GlassButton(
             .then(
                 if (type == GlassButtonType.EQUALS) {
                     Modifier.shadow(
-                        elevation = 16.dp,
-                        shape = shape,
+                        elevation = 14.dp,
+                        shape = superellipse,
                         clip = false,
                         ambientColor = GlassTheme.OperatorGlow,
                         spotColor = GlassTheme.OperatorGlow
                     )
                 } else if (isActiveOperator) {
                     Modifier.shadow(
-                        elevation = 12.dp,
-                        shape = shape,
+                        elevation = 10.dp,
+                        shape = superellipse,
                         clip = false,
                         ambientColor = Color.White,
                         spotColor = Color.White
@@ -129,52 +131,170 @@ fun GlassButton(
                     Modifier
                 }
             )
-            .clip(shape)
-            .background(baseColor)
-            .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(colors = borderColors),
-                shape = shape
-            )
+            .clip(superellipse)
             .clickable(
                 interactionSource = interactionSource,
-                indication = null, // Custom physical scale feedback instead
+                indication = null,
                 onClick = onClick
             ),
         contentAlignment = if (isWide) Alignment.CenterStart else Alignment.Center
     ) {
-        // 3D Crescent Glass Glare (Liquid reflection overlay)
-        if (!isActiveOperator) {
-            Canvas(modifier = Modifier.matchParentSize()) {
-                val clipPath = Path().apply {
-                    addRoundRect(
-                        androidx.compose.ui.geometry.RoundRect(
-                            rect = Rect(0f, 0f, size.width, size.height),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(100.dp.toPx(), 100.dp.toPx())
-                        )
+        // High-Fidelity 3D Optical Glass Rendering Engine
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val width = size.width
+            val height = size.height
+            val steps = 120
+            val n = 4.8
+
+            // Create Path for SuperellipseShape to use in drawing operations
+            val superellipsePath = Path().apply {
+                val cx = width / 2f
+                val cy = height / 2f
+                val rx = width / 2f
+                val ry = height / 2f
+                for (i in 0..steps) {
+                    val theta = i * 2.0 * Math.PI / steps
+                    val cosT = cos(theta)
+                    val sinT = sin(theta)
+                    val xSign = if (cosT >= 0.0) 1.0 else -1.0
+                    val ySign = if (sinT >= 0.0) 1.0 else -1.0
+                    val x = cx + rx * xSign * abs(cosT).pow(2.0 / n)
+                    val y = cy + ry * ySign * abs(sinT).pow(2.0 / n)
+                    if (i == 0) moveTo(x.toFloat(), y.toFloat()) else lineTo(x.toFloat(), y.toFloat())
+                }
+                close()
+            }
+
+            // 1. Transparent Base Layer
+            drawPath(
+                path = superellipsePath,
+                color = baseColor
+            )
+
+            // 2. Refraction Layer (Primary visual effect: 1.8dp shift)
+            clipPath(superellipsePath) {
+                drawPath(
+                    path = superellipsePath,
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.08f),
+                            Color.Transparent
+                        ),
+                        center = Offset(width * 0.45f + 1.8.dp.toPx(), height * 0.45f + 1.8.dp.toPx()),
+                        radius = width * 0.5f
+                    )
+                )
+            }
+
+            // 3. Internal Light Layer (Light accumulation, no frosted diffusion)
+            clipPath(superellipsePath) {
+                val glowColor = when (type) {
+                    GlassButtonType.OPERATOR -> Color(0xFF0A84FF).copy(alpha = 0.12f)
+                    GlassButtonType.NUMBER -> Color(0xFF7C4DFF).copy(alpha = 0.06f) // Subtle purple
+                    else -> Color.White.copy(alpha = 0.05f)
+                }
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(glowColor, Color.Transparent),
+                        center = Offset(width * 0.5f, height * 0.5f),
+                        radius = width * 0.6f
+                    ),
+                    center = Offset(width * 0.5f, height * 0.5f),
+                    radius = width * 0.6f
+                )
+            }
+
+            // 4. Edge Highlight Layer (Double-rim outline)
+            // Outer Rim (35% opacity)
+            drawPath(
+                path = superellipsePath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.35f),
+                        Color.White.copy(alpha = 0.10f)
+                    )
+                ),
+                style = Stroke(width = 1.dp.toPx())
+            )
+            // Inner Rim (65% opacity top, 25% bottom, 80% top highlight)
+            drawPath(
+                path = superellipsePath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.80f), // Top highlight
+                        Color.White.copy(alpha = 0.65f), // Inner rim
+                        Color.White.copy(alpha = 0.25f)  // Bottom reflection
+                    ),
+                    startY = 0f,
+                    endY = height
+                ),
+                style = Stroke(width = 1.8.dp.toPx())
+            )
+
+            // 5. Specular Glare Layer (Angled reflections on 8-second cycle)
+            if (!isActiveOperator) {
+                clipPath(superellipsePath) {
+                    val startX = width * reflectionProgress
+                    val endX = startX + width * 0.5f
+                    val strokeW = 18.dp.toPx()
+
+                    // Primary reflection streak
+                    drawLine(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.14f),
+                                Color.White.copy(alpha = 0.04f),
+                                Color.Transparent
+                            ),
+                            start = Offset(startX, 0f),
+                            end = Offset(endX, height)
+                        ),
+                        start = Offset(startX, 0f),
+                        end = Offset(endX, height),
+                        strokeWidth = strokeW
+                    )
+
+                    // Secondary reflection streak (parallel)
+                    val secStartX = startX - width * 0.22f
+                    val secEndX = secStartX + width * 0.5f
+                    drawLine(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.06f),
+                                Color.Transparent
+                            ),
+                            start = Offset(secStartX, 0f),
+                            end = Offset(secEndX, height)
+                        ),
+                        start = Offset(secStartX, 0f),
+                        end = Offset(secEndX, height),
+                        strokeWidth = 6.dp.toPx()
                     )
                 }
-                // Clip reflection to button borders
-                clipPath(clipPath) {
-                    val glarePath = Path().apply {
-                        val glareHeight = size.height * 0.4f
-                        // Oval crescent shape
-                        addOval(Rect(0f, -size.height * 0.1f, size.width, glareHeight))
-                    }
-                    drawPath(
-                        path = glarePath,
-                        brush = Brush.verticalGradient(
+            }
+
+            // 6. Specular Hotspot (Lens-like highlight)
+            if (!isActiveOperator) {
+                clipPath(superellipsePath) {
+                    drawCircle(
+                        brush = Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.28f),
-                                Color.White.copy(alpha = 0.01f)
-                            )
-                        )
+                                Color.White.copy(alpha = 0.32f),
+                                Color.Transparent
+                            ),
+                            center = Offset(width * 0.25f, height * 0.25f),
+                            radius = width * 0.18f
+                        ),
+                        center = Offset(width * 0.25f, height * 0.25f),
+                        radius = width * 0.18f
                     )
                 }
             }
         }
 
-        // Text labels (Pill "0" button is left-padded; standard circular keys are centered)
+        // 7. Icon/Label Layer
         Text(
             text = text,
             color = textColor,
