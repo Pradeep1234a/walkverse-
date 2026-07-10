@@ -110,13 +110,27 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/build.gradle.kts
-          git commit -m "Bump version to v${{ steps.version_bump.outputs.VERSION_NAME }} [skip ci]"
-          git push origin main
+
+          # If there are no staged changes, skip commit/push to avoid failure
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Bump version to v${{ steps.version_bump.outputs.VERSION_NAME }} [skip ci]"
+            git push origin main
+          fi
 
       - name: Create Git Tag
         run: |
-          git tag v${{ steps.version_bump.outputs.VERSION_NAME }}
-          git push origin v${{ steps.version_bump.outputs.VERSION_NAME }}
+          TAG="v${{ steps.version_bump.outputs.VERSION_NAME }}"
+
+          # Check if tag exists on remote; if so, skip creating it
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "Tag $TAG already exists on remote — skipping tag creation."
+          else
+            # Create and push tag
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
