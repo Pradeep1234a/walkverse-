@@ -1,7 +1,7 @@
-package com.liquidglass.calculator.ui.viewmodel
+package com.walkverse.calculator.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
-import com.liquidglass.calculator.core.MathParser
+import com.walkverse.calculator.core.MathParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

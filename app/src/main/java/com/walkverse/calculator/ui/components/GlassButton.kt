@@ -1,4 +1,4 @@
-package com.liquidglass.calculator.ui.components
+package com.walkverse.calculator.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -23,7 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.liquidglass.calculator.ui.theme.GlassTheme
+import com.walkverse.calculator.ui.theme.GlassTheme
 
 enum class GlassButtonType {
     NUMBER,

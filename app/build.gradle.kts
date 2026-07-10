@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.liquidglass.calculator"
+    namespace = "com.walkverse.calculator"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.liquidglass.calculator"
+        applicationId = "com.walkverse.calculator"
         minSdk = 26
         targetSdk = 36
         versionCode = 201

@@ -1,4 +1,4 @@
-package com.liquidglass.calculator.core
+package com.walkverse.calculator.core
 
 import kotlin.math.*
 

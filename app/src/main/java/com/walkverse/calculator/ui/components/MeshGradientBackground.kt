@@ -1,4 +1,4 @@
-package com.liquidglass.calculator.ui.components
+package com.walkverse.calculator.ui.components
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import com.liquidglass.calculator.ui.theme.GlassTheme
+import com.walkverse.calculator.ui.theme.GlassTheme
 import kotlin.math.cos
 import kotlin.math.sin
 

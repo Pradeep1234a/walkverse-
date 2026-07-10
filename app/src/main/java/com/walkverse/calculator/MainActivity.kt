@@ -1,13 +1,13 @@
-package com.liquidglass.calculator
+package com.walkverse.calculator
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
-import com.liquidglass.calculator.ui.screens.CalculatorScreen
-import com.liquidglass.calculator.ui.theme.LiquidGlassTheme
-import com.liquidglass.calculator.ui.viewmodel.CalculatorViewModel
+import com.walkverse.calculator.ui.screens.CalculatorScreen
+import com.walkverse.calculator.ui.theme.LiquidGlassTheme
+import com.walkverse.calculator.ui.viewmodel.CalculatorViewModel
 
 class MainActivity : ComponentActivity() {
 

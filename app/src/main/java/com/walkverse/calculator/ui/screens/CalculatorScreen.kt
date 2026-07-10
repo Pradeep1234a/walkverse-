@@ -1,4 +1,4 @@
-package com.liquidglass.calculator.ui.screens
+package com.walkverse.calculator.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
@@ -25,10 +25,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.liquidglass.calculator.ui.components.*
-import com.liquidglass.calculator.ui.theme.GlassTheme
-import com.liquidglass.calculator.ui.theme.GlassTypography
-import com.liquidglass.calculator.ui.viewmodel.CalculatorViewModel
+import com.walkverse.calculator.ui.components.*
+import com.walkverse.calculator.ui.theme.GlassTheme
+import com.walkverse.calculator.ui.theme.GlassTypography
+import com.walkverse.calculator.ui.viewmodel.CalculatorViewModel
 
 @Composable
 fun CalculatorScreen(

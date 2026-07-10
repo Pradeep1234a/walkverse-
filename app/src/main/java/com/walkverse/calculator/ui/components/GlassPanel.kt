@@ -1,4 +1,4 @@
-package com.liquidglass.calculator.ui.components
+package com.walkverse.calculator.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.liquidglass.calculator.ui.theme.GlassTheme
+import com.walkverse.calculator.ui.theme.GlassTheme
 
 @Composable
 fun GlassPanel(
