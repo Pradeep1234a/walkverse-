@@ -11,8 +11,8 @@ android {
         applicationId = "com.walkverse.calculator"
         minSdk = 26
         targetSdk = 34
-        versionCode = 201
-        versionName = "2.0.1"
+        versionCode = 206
+        versionName = "2.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
