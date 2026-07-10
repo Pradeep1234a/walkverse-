@@ -14,25 +14,25 @@ import androidx.compose.ui.unit.sp
 
 // iOS 26 Liquid Glass Color Tokens
 object GlassTheme {
-    val BackgroundDark = Color(0xFF070B19)
+    val BackgroundDark = Color(0xFF03050C)
     
     // Glass surface base colors
     val GlassBase = Color.White.copy(alpha = 0.10f)
-    val GlassHover = Color.White.copy(alpha = 0.18f)
-    val GlassBorder = Color.White.copy(alpha = 0.20f)
-    val GlassRing = Color.White.copy(alpha = 0.10f)
+    val GlassHover = Color.White.copy(alpha = 0.22f)
+    val GlassBorder = Color.White.copy(alpha = 0.25f)
     
-    // Glass keys variations
-    val NumberKeyGlass = Color.White.copy(alpha = 0.08f)
+    // Glass keys variations (15% dark translucent glass)
+    val NumberKeyGlass = Color(0xFF2C2C2E).copy(alpha = 0.45f)
+    val NumberKeyHighlight = Color.White.copy(alpha = 0.15f)
     
-    // Operator glow keys (blue/cyan accented)
-    val OperatorKeyGlass = Color(0xFF3B82F6).copy(alpha = 0.15f)
-    val OperatorGlow = Color(0xFF60A5FA)
+    // Function keys (Frosted light blue/grey glass)
+    val FunctionKeyGlass = Color(0xFF8E8E93).copy(alpha = 0.35f)
+    val FunctionText = Color.White
     
-    // Prominent equals key (highly luminous glass)
-    val EqualsKeyGlassStart = Color(0xFF00E5FF).copy(alpha = 0.40f)
-    val EqualsKeyGlassEnd = Color(0xFF2979FF).copy(alpha = 0.50f)
-    val EqualsGlow = Color(0xFF00E5FF)
+    // Operator keys (Amber/Orange Liquid Glass)
+    val OperatorKeyGlass = Color(0xFFFF9F0A).copy(alpha = 0.65f)
+    val OperatorGlow = Color(0xFFFFB84D)
+    val OperatorText = Color.White
     
     // Typography color states
     val TextPrimary = Color.White
@@ -86,16 +86,16 @@ fun LiquidGlassTheme(
 ) {
     val colorScheme = if (darkTheme) {
         darkColorScheme(
-            primary = Color(0xFF3B82F6),
-            secondary = Color(0xFF00E5FF),
+            primary = Color(0xFFFF9F0A),
+            secondary = Color(0xFFFFB84D),
             background = GlassTheme.BackgroundDark,
             surface = GlassTheme.GlassBase
         )
     } else {
         lightColorScheme(
-            primary = Color(0xFF2563EB),
-            secondary = Color(0xFF00B8D4),
-            background = Color(0xFF0A0F26),
+            primary = Color(0xFFD97706),
+            secondary = Color(0xFFF59E0B),
+            background = Color(0xFF03050C),
             surface = GlassTheme.GlassBase
         )
     }

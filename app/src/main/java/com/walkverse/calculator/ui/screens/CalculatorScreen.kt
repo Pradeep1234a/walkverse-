@@ -2,12 +2,15 @@ package com.walkverse.calculator.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,7 +22,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,11 +40,10 @@ fun CalculatorScreen(
     viewModel: CalculatorViewModel,
     modifier: Modifier = Modifier
 ) {
-    val expression by viewModel.expression.collectAsState()
-    val result by viewModel.result.collectAsState()
+    val expressionDisplay by viewModel.expressionDisplay.collectAsState()
+    val largeDisplay by viewModel.largeDisplay.collectAsState()
     val history by viewModel.history.collectAsState()
-    val isScientific by viewModel.isScientific.collectAsState()
-    val useRadians by viewModel.useRadians.collectAsState()
+    val activeOperator by viewModel.activeOperator.collectAsState()
     val currentTheme by viewModel.currentTheme.collectAsState()
 
     var showHistory by remember { mutableStateOf(false) }
@@ -49,146 +53,103 @@ fun CalculatorScreen(
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
-        // 1. Moving Mesh Gradient Background
+        // 1. Live Ambient Glow Background
         MeshGradientBackground(themeName = currentTheme)
 
-        // Main Layout containing Display and Buttons
+        // Main Layout Panel
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 2. Floating Top Glass Toolbar
-            GlassPanel(
-                cornerRadius = 24.dp,
-                shadowElevation = 8.dp,
+            
+            // 2. Top Bar: Toggler for history drawer
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .wrapContentHeight()
+                    .height(56.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Floating Circular Glass Menu Button (Matching image reference)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .shadow(elevation = 6.dp, shape = CircleShape, clip = false)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.12f))
+                        .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { showHistory = !showHistory }
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // History Button
-                    IconButton(onClick = { showHistory = !showHistory }) {
-                        Icon(
-                            imageVector = Icons.Default.History,
-                            contentDescription = "Show History",
-                            tint = Color.White
-                        )
-                    }
-
-                    // Mode indicator
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { viewModel.toggleScientific() }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isScientific) Icons.Default.Science else Icons.Default.Calculate,
-                            contentDescription = "Toggle Calculator Mode",
-                            tint = GlassTheme.OperatorGlow,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = if (isScientific) "Scientific" else "Standard",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    // Theme and Angle unit buttons
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Radians/Degrees Toggle
-                        Text(
-                            text = if (useRadians) "RAD" else "DEG",
-                            color = GlassTheme.OperatorGlow,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { viewModel.toggleAngleUnit() }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-
-                        // Cycle Themes
-                        IconButton(onClick = {
-                            val nextTheme = when (currentTheme) {
-                                "mesh_nebula" -> "mesh_aurora"
-                                "mesh_aurora" -> "mesh_sunset"
-                                else -> "mesh_nebula"
-                            }
-                            viewModel.changeTheme(nextTheme)
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Palette,
-                                contentDescription = "Change Theme",
-                                tint = Color.White
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "Open History Drawer",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
 
-            // 3. Display Panel
-            GlassPanel(
-                cornerRadius = 28.dp,
-                shadowElevation = 16.dp,
+            // 3. Right-Aligned Display panel with swipe gestures to erase
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f) // Expands to fill available vertical space
+                    .weight(1f)
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures { _, dragAmount ->
+                            // Erase one digit if horizontal swipe exceeds threshold
+                            if (kotlin.math.abs(dragAmount) > 24f) {
+                                viewModel.onDelete()
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.BottomEnd
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.Bottom,
                     horizontalAlignment = Alignment.End
                 ) {
-                    // Current formula expression
+                    // Small Expression display (e.g. 1,234+5,678)
                     AnimatedContent(
-                        targetState = expression,
+                        targetState = expressionDisplay,
                         transitionSpec = {
                             fadeIn(animationSpec = spring()) togetherWith fadeOut(animationSpec = spring())
                         },
                         label = "ExpressionAnimation"
-                    ) { targetExpression ->
+                    ) { targetExpr ->
                         Text(
-                            text = targetExpression.ifEmpty { "0" },
-                            style = GlassTypography.displayLarge.copy(
-                                fontSize = if (targetExpression.length > 10) 36.sp else 54.sp
-                            ),
+                            text = targetExpr,
+                            color = GlassTheme.TextSecondary,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Light,
                             textAlign = TextAlign.End,
-                            maxLines = 3,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                    // Preview Evaluated Result
-                    AnimatedVisibility(
-                        visible = result.isNotEmpty(),
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
+                    // Large Input display (e.g. 6,912)
+                    AnimatedContent(
+                        targetState = largeDisplay,
+                        transitionSpec = {
+                            fadeIn(animationSpec = spring()) togetherWith fadeOut(animationSpec = spring())
+                        },
+                        label = "InputDisplayAnimation"
+                    ) { targetDisplay ->
                         Text(
-                            text = result,
-                            style = GlassTypography.headlineMedium.copy(
-                                color = GlassTheme.TextSecondary,
-                                fontSize = 28.sp
+                            text = targetDisplay,
+                            style = GlassTypography.displayLarge.copy(
+                                fontSize = if (targetDisplay.length > 9) 44.sp else 68.sp
                             ),
                             textAlign = TextAlign.End,
                             maxLines = 1,
@@ -199,108 +160,122 @@ fun CalculatorScreen(
                 }
             }
 
-            // 4. Keyboard Layout (Dynamic columns with morphing)
-            Row(
+            // 4. Apple iPhone Grid Keyboard layout with liquid glass styles
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .wrapContentHeight(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Left Panel: Scientific Keys (visible only in scientific mode)
-                AnimatedVisibility(
-                    visible = isScientific,
-                    enter = slideInHorizontally(initialOffsetX = { -it }) + fadeIn(),
-                    exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(),
-                    modifier = Modifier.weight(2f)
+                // Row 1: AC, +/−, %, ÷
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        val row1 = listOf("sin", "cos")
-                        val row2 = listOf("tan", "ln")
-                        val row3 = listOf("log", "sqrt")
-                        val row4 = listOf("π", "e")
-                        val row5 = listOf("(", ")")
-                        
-                        val sciGrid = listOf(row1, row2, row3, row4, row5)
-                        
-                        sciGrid.forEach { rowKeys ->
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                rowKeys.forEach { key ->
-                                    val isConstant = key == "π" || key == "e"
-                                    val isParenthesis = key == "(" || key == ")"
-                                    
-                                    GlassButton(
-                                        text = key,
-                                        onClick = {
-                                            when {
-                                                isConstant -> viewModel.onConstant(key)
-                                                isParenthesis -> viewModel.onParenthesis(key)
-                                                key == "sqrt" -> viewModel.onFunction("sqrt")
-                                                else -> viewModel.onFunction(key)
-                                            }
-                                        },
-                                        type = GlassButtonType.FUNCTION,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    // C / AC label toggler
+                    val showClearOnly = largeDisplay != "0" && largeDisplay.isNotEmpty()
+                    val clearLabel = if (showClearOnly) "C" else "AC"
+                    
+                    GlassButton(
+                        text = clearLabel,
+                        onClick = { viewModel.onClear() },
+                        type = GlassButtonType.FUNCTION,
+                        modifier = Modifier.weight(1f)
+                    )
+                    GlassButton(
+                        text = "±",
+                        onClick = { viewModel.onToggleSign() },
+                        type = GlassButtonType.FUNCTION,
+                        modifier = Modifier.weight(1f)
+                    )
+                    GlassButton(
+                        text = "%",
+                        onClick = { viewModel.onPercent() },
+                        type = GlassButtonType.FUNCTION,
+                        modifier = Modifier.weight(1f)
+                    )
+                    GlassButton(
+                        text = "÷",
+                        onClick = { viewModel.onOperator("÷") },
+                        type = GlassButtonType.OPERATOR,
+                        isActiveOperator = activeOperator == "÷",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
-                // Right Panel: Standard Keys
-                Column(
-                    modifier = Modifier.weight(4f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                // Row 2: 7, 8, 9, ×
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    val keys = listOf(
-                        listOf("C", "Del", "^", "÷"),
-                        listOf("7", "8", "9", "×"),
-                        listOf("4", "5", "6", "-"),
-                        listOf("1", "2", "3", "+"),
-                        listOf("0", ".", "=")
+                    GlassButton(text = "7", onClick = { viewModel.onDigit("7") }, modifier = Modifier.weight(1f))
+                    GlassButton(text = "8", onClick = { viewModel.onDigit("8") }, modifier = Modifier.weight(1f))
+                    GlassButton(text = "9", onClick = { viewModel.onDigit("9") }, modifier = Modifier.weight(1f))
+                    GlassButton(
+                        text = "×",
+                        onClick = { viewModel.onOperator("×") },
+                        type = GlassButtonType.OPERATOR,
+                        isActiveOperator = activeOperator == "×",
+                        modifier = Modifier.weight(1f)
                     )
+                }
 
-                    keys.forEach { rowKeys ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            rowKeys.forEach { key ->
-                                val isOperator = key == "÷" || key == "×" || key == "-" || key == "+" || key == "^"
-                                val isEquals = key == "="
-                                val isClearOrDel = key == "C" || key == "Del"
-                                
-                                val buttonType = when {
-                                    isEquals -> GlassButtonType.EQUALS
-                                    isOperator -> GlassButtonType.OPERATOR
-                                    isClearOrDel -> GlassButtonType.FUNCTION
-                                    else -> GlassButtonType.NUMBER
-                                }
+                // Row 3: 4, 5, 6, −
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    GlassButton(text = "4", onClick = { viewModel.onDigit("4") }, modifier = Modifier.weight(1f))
+                    GlassButton(text = "5", onClick = { viewModel.onDigit("5") }, modifier = Modifier.weight(1f))
+                    GlassButton(text = "6", onClick = { viewModel.onDigit("6") }, modifier = Modifier.weight(1f))
+                    GlassButton(
+                        text = "−",
+                        onClick = { viewModel.onOperator("−") },
+                        type = GlassButtonType.OPERATOR,
+                        isActiveOperator = activeOperator == "−",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
-                                GlassButton(
-                                    text = key,
-                                    onClick = {
-                                        when {
-                                            key == "C" -> viewModel.onClear()
-                                            key == "Del" -> viewModel.onDelete()
-                                            key == "=" -> viewModel.onEqual()
-                                            key == "." -> viewModel.onDecimal()
-                                            isOperator -> viewModel.onOperator(key)
-                                            else -> viewModel.onDigit(key)
-                                        }
-                                    },
-                                    type = buttonType,
-                                    // Expand '0' button to take double width in 3-column row
-                                    modifier = Modifier.weight(if (key == "0" && rowKeys.size == 3) 2f else 1f)
-                                )
-                            }
-                        }
-                    }
+                // Row 4: 1, 2, 3, +
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    GlassButton(text = "1", onClick = { viewModel.onDigit("1") }, modifier = Modifier.weight(1f))
+                    GlassButton(text = "2", onClick = { viewModel.onDigit("2") }, modifier = Modifier.weight(1f))
+                    GlassButton(text = "3", onClick = { viewModel.onDigit("3") }, modifier = Modifier.weight(1f))
+                    GlassButton(
+                        text = "+",
+                        onClick = { viewModel.onOperator("+") },
+                        type = GlassButtonType.OPERATOR,
+                        isActiveOperator = activeOperator == "+",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                // Row 5: 0 (double span), ., =
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    GlassButton(
+                        text = "0",
+                        onClick = { viewModel.onDigit("0") },
+                        isWide = true,
+                        modifier = Modifier.weight(2f)
+                    )
+                    GlassButton(
+                        text = ".",
+                        onClick = { viewModel.onDecimal() },
+                        modifier = Modifier.weight(1f)
+                    )
+                    GlassButton(
+                        text = "=",
+                        onClick = { viewModel.onEqual() },
+                        type = GlassButtonType.EQUALS,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -311,7 +286,7 @@ fun CalculatorScreen(
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier
-                .fillMaxWidth(0.9f)
+                .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.6f)
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 24.dp)
@@ -388,7 +363,8 @@ fun CalculatorScreen(
                                         .fillMaxWidth()
                                         .clickable {
                                             viewModel.onClear()
-                                            viewModel.onDigit(expr)
+                                            // Split expression back to enter it
+                                            viewModel.onDigit(res.replace(",", ""))
                                             showHistory = false
                                         }
                                         .padding(8.dp),

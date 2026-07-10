@@ -9,183 +9,239 @@ import java.text.DecimalFormat
 
 class CalculatorViewModel : ViewModel() {
 
-    private val _expression = MutableStateFlow("")
-    val expression: StateFlow<String> = _expression.asStateFlow()
+    private val _currentTheme = MutableStateFlow("mesh_nebula")
+    val currentTheme: StateFlow<String> = _currentTheme.asStateFlow()
 
-    private val _result = MutableStateFlow("")
-    val result: StateFlow<String> = _result.asStateFlow()
+    private val _expressionDisplay = MutableStateFlow("")
+    val expressionDisplay: StateFlow<String> = _expressionDisplay.asStateFlow()
+
+    private val _largeDisplay = MutableStateFlow("0")
+    val largeDisplay: StateFlow<String> = _largeDisplay.asStateFlow()
 
     private val _history = MutableStateFlow<List<String>>(emptyList())
     val history: StateFlow<List<String>> = _history.asStateFlow()
 
-    private val _isScientific = MutableStateFlow(false)
-    val isScientific: StateFlow<Boolean> = _isScientific.asStateFlow()
+    private val _activeOperator = MutableStateFlow<String?>(null)
+    val activeOperator: StateFlow<String?> = _activeOperator.asStateFlow()
 
-    private val _useRadians = MutableStateFlow(false)
-    val useRadians: StateFlow<Boolean> = _useRadians.asStateFlow()
-
-    // Themes: "mesh_nebula" (blue/purple), "mesh_aurora" (cyan/teal/blue), "mesh_sunset" (purple/pink/orange)
-    private val _currentTheme = MutableStateFlow("mesh_nebula")
-    val currentTheme: StateFlow<String> = _currentTheme.asStateFlow()
+    private var rawExpression = ""
+    private var isEnteringNumber = false
+    private var currentInput = ""
 
     private val decimalFormat = DecimalFormat("#.##########")
 
     fun onDigit(digit: String) {
-        if (_expression.value == "Error") {
-            _expression.value = ""
+        if (currentInput == "Error") {
+            currentInput = ""
         }
-        _expression.value += digit
-        autoEvaluate()
+        
+        // Disable leading multiple zeros
+        if (currentInput == "0" && digit == "0") return
+        if (currentInput == "0") {
+            currentInput = digit
+        } else {
+            currentInput += digit
+        }
+
+        isEnteringNumber = true
+        _largeDisplay.value = formatNumberWithCommas(currentInput)
+        
+        // Turn off active operator glow since we started typing a number
+        _activeOperator.value = null
+        
+        updateExpressionDisplay()
     }
 
     fun onDecimal() {
-        val expr = _expression.value
-        if (expr == "Error") {
-            _expression.value = "0."
-            return
+        if (currentInput == "Error") {
+            currentInput = "0."
+        } else if (currentInput.isEmpty()) {
+            currentInput = "0."
+        } else if (!currentInput.contains(".")) {
+            currentInput += "."
         }
-        if (expr.isEmpty()) {
-            _expression.value = "0."
-            return
-        }
-
-        // Find last segment to ensure we don't double decimals in a single number
-        val lastNumber = expr.split("+", "-", "×", "÷", "(", ")", "^").lastOrNull() ?: ""
-        if (!lastNumber.contains(".")) {
-            _expression.value += "."
-        }
+        
+        isEnteringNumber = true
+        _largeDisplay.value = formatNumberWithCommas(currentInput)
+        _activeOperator.value = null
+        updateExpressionDisplay()
     }
 
     fun onOperator(op: String) {
-        val expr = _expression.value
-        if (expr == "Error") return
+        if (currentInput == "Error") return
 
-        if (expr.isNotEmpty()) {
-            val lastChar = expr.last()
-            if (lastChar == '+' || lastChar == '-' || lastChar == '×' || lastChar == '÷' || lastChar == '^') {
+        // If we typed a number, commit it to rawExpression first
+        if (isEnteringNumber && currentInput.isNotEmpty()) {
+            rawExpression += currentInput
+            currentInput = ""
+            isEnteringNumber = false
+        }
+
+        if (rawExpression.isNotEmpty()) {
+            val lastChar = rawExpression.last()
+            if (lastChar == '+' || lastChar == '-' || lastChar == '*' || lastChar == '/' || lastChar == '^') {
                 // Replace last operator
-                _expression.value = expr.substring(0, expr.length - 1) + op
+                rawExpression = rawExpression.substring(0, rawExpression.length - 1) + convertOp(op)
             } else {
-                _expression.value += op
+                rawExpression += convertOp(op)
             }
-        } else if (op == "-") {
-            // Negative start
-            _expression.value = "-"
+            _activeOperator.value = op
+        }
+        updateExpressionDisplay()
+    }
+
+    fun onPercent() {
+        if (currentInput.isNotEmpty() && currentInput != "Error") {
+            try {
+                val value = currentInput.toDouble() / 100.0
+                currentInput = value.toString()
+                _largeDisplay.value = formatNumberWithCommas(currentInput)
+                updateExpressionDisplay()
+            } catch (e: Exception) {
+                currentInput = "Error"
+                _largeDisplay.value = "Error"
+            }
         }
     }
 
-    fun onFunction(func: String) {
-        if (_expression.value == "Error") {
-            _expression.value = ""
+    fun onToggleSign() {
+        if (currentInput.isNotEmpty() && currentInput != "Error") {
+            currentInput = if (currentInput.startsWith("-")) {
+                currentInput.substring(1)
+            } else {
+                "-$currentInput"
+            }
+            _largeDisplay.value = formatNumberWithCommas(currentInput)
+            updateExpressionDisplay()
         }
-        _expression.value += "$func("
-    }
-
-    fun onConstant(constant: String) {
-        if (_expression.value == "Error") {
-            _expression.value = ""
-        }
-        _expression.value += constant
-        autoEvaluate()
-    }
-
-    fun onParenthesis(paren: String) {
-        if (_expression.value == "Error") {
-            _expression.value = ""
-        }
-        _expression.value += paren
-        autoEvaluate()
     }
 
     fun onClear() {
-        _expression.value = ""
-        _result.value = ""
+        if (currentInput.isNotEmpty() && currentInput != "0") {
+            // Clean Entry behavior (Clear display value, keep expression)
+            currentInput = "0"
+            _largeDisplay.value = "0"
+        } else {
+            // All Clear (AC) behavior
+            rawExpression = ""
+            currentInput = ""
+            _largeDisplay.value = "0"
+            _expressionDisplay.value = ""
+            _activeOperator.value = null
+        }
+        updateExpressionDisplay()
     }
 
     fun onDelete() {
-        val expr = _expression.value
-        if (expr == "Error" || expr.isEmpty()) {
-            _expression.value = ""
-            _result.value = ""
-            return
+        if (currentInput.isEmpty() || currentInput == "Error" || currentInput == "0") return
+        
+        currentInput = if (currentInput.length > 1) {
+            currentInput.substring(0, currentInput.length - 1)
+        } else {
+            "0"
         }
-
-        // Handle deleting function names like "sin(", "cos(", "log(", "sqrt("
-        val knownFunctions = listOf("sin(", "cos(", "tan(", "log(", "sqrt(", "asin(", "acos(", "atan(")
-        var deletedFunc = false
-        for (func in knownFunctions) {
-            if (expr.endsWith(func)) {
-                _expression.value = expr.substring(0, expr.length - func.length)
-                deletedFunc = true
-                break
-            }
-        }
-        if (expr.endsWith("ln(")) {
-            _expression.value = expr.substring(0, expr.length - 3)
-            deletedFunc = true
-        }
-
-        if (!deletedFunc) {
-            _expression.value = expr.substring(0, expr.length - 1)
-        }
-
-        autoEvaluate()
+        
+        _largeDisplay.value = formatNumberWithCommas(currentInput)
+        updateExpressionDisplay()
     }
 
     fun onEqual() {
-        val expr = _expression.value
-        if (expr.isEmpty()) return
+        // Commit final input to expression
+        if (currentInput.isNotEmpty()) {
+            rawExpression += currentInput
+        }
+
+        if (rawExpression.isEmpty()) return
 
         try {
-            val parser = MathParser(_useRadians.value)
-            val evalResult = parser.evaluate(expr)
-            
+            val parser = MathParser(useRadians = false)
+            val evalResult = parser.evaluate(rawExpression)
+
             if (evalResult.isNaN() || evalResult.isInfinite()) {
-                _result.value = "Error"
+                _largeDisplay.value = "Error"
+                currentInput = "Error"
                 return
             }
 
             val formattedResult = formatValue(evalResult)
             
-            // Add to history
-            val entry = "$expr = $formattedResult"
+            // Log calculation into history list
+            val entry = "${formatExpressionString(rawExpression)} = ${formatNumberWithCommas(formattedResult)}"
             _history.value = listOf(entry) + _history.value
 
-            _expression.value = formattedResult
-            _result.value = ""
+            _largeDisplay.value = formatNumberWithCommas(formattedResult)
+            currentInput = formattedResult
+            rawExpression = ""
+            isEnteringNumber = false
+            _activeOperator.value = null
         } catch (e: Exception) {
-            _result.value = "Error"
+            _largeDisplay.value = "Error"
+            currentInput = "Error"
         }
     }
 
-    private fun autoEvaluate() {
-        val expr = _expression.value
-        if (expr.isEmpty()) {
-            _result.value = ""
-            return
+    private fun updateExpressionDisplay() {
+        _expressionDisplay.value = formatExpressionString(rawExpression + currentInput)
+    }
+
+    private fun convertOp(op: String): String {
+        return when (op) {
+            "÷" -> "/"
+            "×" -> "*"
+            "−" -> "-"
+            "+" -> "+"
+            else -> op
         }
+    }
 
-        // Try evaluating as a preview, but swallow errors silently
-        try {
-            // Count matching parentheses. If unbalanced, temporarily balance for preview
-            var balancedExpr = expr
-            val openCount = expr.count { it == '(' }
-            val closeCount = expr.count { it == ')' }
-            if (openCount > closeCount) {
-                balancedExpr += ")".repeat(openCount - closeCount)
-            }
-
-            val parser = MathParser(_useRadians.value)
-            val evalResult = parser.evaluate(balancedExpr)
+    private fun formatExpressionString(expr: String): String {
+        // Regex to separate numbers and operator characters to format numbers with commas
+        val pattern = "([\\d\\.]+)|([\\+\\-\\*/\\^÷×−\\(\\)])".toRegex()
+        val matches = pattern.findAll(expr)
+        
+        val sb = StringBuilder()
+        for (match in matches) {
+            val num = match.groups[1]?.value
+            val op = match.groups[2]?.value
             
-            if (!evalResult.isNaN() && !evalResult.isInfinite()) {
-                _result.value = formatValue(evalResult)
-            } else {
-                _result.value = ""
+            if (num != null) {
+                sb.append(formatNumberWithCommas(num))
+            } else if (op != null) {
+                val displayOp = when (op) {
+                    "/" -> "÷"
+                    "*" -> "×"
+                    "-" -> "−"
+                    else -> op
+                }
+                sb.append(displayOp)
             }
-        } catch (e: Exception) {
-            _result.value = ""
         }
+        return sb.toString()
+    }
+
+    private fun formatNumberWithCommas(numberStr: String): String {
+        if (numberStr.isEmpty() || numberStr == "Error" || numberStr == "Infinity" || numberStr == "NaN") return numberStr
+        
+        val parts = numberStr.split(".")
+        val integerPart = parts[0]
+        val decimalPart = if (parts.size > 1) "." + parts[1] else ""
+        
+        val isNegative = integerPart.startsWith("-")
+        val cleanInt = if (isNegative) integerPart.substring(1) else integerPart
+        
+        if (cleanInt.isEmpty() || !cleanInt.all { it.isDigit() }) return numberStr
+        
+        val sb = StringBuilder()
+        var count = 0
+        for (i in cleanInt.length - 1 downTo 0) {
+            if (count > 0 && count % 3 == 0) {
+                sb.append(",")
+            }
+            sb.append(cleanInt[i])
+            count++
+        }
+        val formattedInt = sb.reverse().toString()
+        return (if (isNegative) "-" else "") + formattedInt + decimalPart
     }
 
     private fun formatValue(value: Double): String {
@@ -194,15 +250,6 @@ class CalculatorViewModel : ViewModel() {
         } else {
             decimalFormat.format(value)
         }
-    }
-
-    fun toggleScientific() {
-        _isScientific.value = !_isScientific.value
-    }
-
-    fun toggleAngleUnit() {
-        _useRadians.value = !_useRadians.value
-        autoEvaluate()
     }
 
     fun changeTheme(theme: String) {
